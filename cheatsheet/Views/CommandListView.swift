@@ -14,6 +14,7 @@ struct CommandListView: View {
     @State private var showingAddCommandSheet = false
     @State private var showingEditCommandSheet = false
     @State private var editingCommand: Command?
+    @StateObject private var dragState = DragState()
     
     var body: some View {
         VStack(spacing: 0) {
@@ -28,14 +29,26 @@ struct CommandListView: View {
                 EmptyCommandView(category: category, commandViewModel: commandViewModel)
             } else {
                 List {
-                    ForEach(commandViewModel.commands) { command in
-                        CommandItemView(command: command, commandViewModel: commandViewModel)
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
+                    ForEach(Array(commandViewModel.commands.enumerated()), id: \.element.id) { index, command in
+                        CommandItemView(
+                            command: command,
+                            commandViewModel: commandViewModel,
+                            dragState: dragState,
+                            index: index
+                        )
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                     }
                 }
                 .listStyle(PlainListStyle())
                 .background(Color(NSColor.controlBackgroundColor))
+
+                // 拖拽指示器
+                if dragState.isDragging {
+                    DragIndicatorView(dragState: dragState)
+                        .padding(.horizontal)
+                        .padding(.bottom, 8)
+                }
             }
         }
         .navigationTitle(category.name ?? "命令")
@@ -122,9 +135,15 @@ struct CategoryHeaderView: View {
 struct CommandItemView: View {
     let command: Command
     @ObservedObject var commandViewModel: CommandViewModel
+    @ObservedObject var dragState: DragState
+    let index: Int
 
     @State private var showingEditSheet = false
     @State private var showingDeleteAlert = false
+
+    private var dragData: DragData {
+        DragData(id: command.id?.uuidString ?? "", type: .command, index: index)
+    }
     
     var body: some View {
         HStack(spacing: 12) {
@@ -163,6 +182,12 @@ struct CommandItemView: View {
                 .stroke(Color(NSColor.separatorColor), lineWidth: 1)
         )
         .contentShape(Rectangle())
+        .draggable(dragData: dragData, dragState: dragState)
+        .droppable(
+            dropData: dragData,
+            dragState: dragState,
+            onDrop: handleDrop
+        )
         .onTapGesture {
             commandViewModel.copyCommand(command)
         }
@@ -197,6 +222,16 @@ struct CommandItemView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 4)
+    }
+
+    private func handleDrop(draggedItem: DragData, dropTarget: DragData) -> Bool {
+        guard draggedItem.type == .command,
+              draggedItem.id != dropTarget.id else {
+            return false
+        }
+
+        commandViewModel.moveCommand(from: draggedItem.index, to: dropTarget.index)
+        return true
     }
 }
 
@@ -255,6 +290,6 @@ struct CopyToastView: View {
     let context = PersistenceController.preview.container.viewContext
     let category = Category(context: context, name: "预览分类")
     let commandViewModel = CommandViewModel(context: context)
-    
+
     return CommandListView(category: category, commandViewModel: commandViewModel)
 }

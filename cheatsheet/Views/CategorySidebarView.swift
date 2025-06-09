@@ -11,6 +11,7 @@ struct CategorySidebarView: View {
     @ObservedObject var categoryViewModel: CategoryViewModel
     @State private var showingAddCategoryAlert = false
     @State private var newCategoryName = ""
+    @StateObject private var dragState = DragState()
     
     var body: some View {
         VStack(spacing: 0) {
@@ -18,18 +19,30 @@ struct CategorySidebarView: View {
             List(selection: $categoryViewModel.selectedCategory) {
                 if !categoryViewModel.pinnedCategories.isEmpty {
                     Section("固定分类") {
-                        ForEach(categoryViewModel.pinnedCategories) { category in
-                            CategoryRowView(category: category, categoryViewModel: categoryViewModel)
-                                .tag(category)
+                        ForEach(Array(categoryViewModel.pinnedCategories.enumerated()), id: \.element.id) { index, category in
+                            CategoryRowView(
+                                category: category,
+                                categoryViewModel: categoryViewModel,
+                                dragState: dragState,
+                                index: index,
+                                isPinnedSection: true
+                            )
+                            .tag(category)
                         }
                     }
                 }
-                
+
                 if !categoryViewModel.unpinnedCategories.isEmpty {
                     Section(categoryViewModel.pinnedCategories.isEmpty ? "分类" : "其他分类") {
-                        ForEach(categoryViewModel.unpinnedCategories) { category in
-                            CategoryRowView(category: category, categoryViewModel: categoryViewModel)
-                                .tag(category)
+                        ForEach(Array(categoryViewModel.unpinnedCategories.enumerated()), id: \.element.id) { index, category in
+                            CategoryRowView(
+                                category: category,
+                                categoryViewModel: categoryViewModel,
+                                dragState: dragState,
+                                index: categoryViewModel.pinnedCategories.count + index,
+                                isPinnedSection: false
+                            )
+                            .tag(category)
                         }
                     }
                 }
@@ -41,6 +54,13 @@ struct CategorySidebarView: View {
             .listStyle(SidebarListStyle())
             .refreshable {
                 categoryViewModel.fetchCategories()
+            }
+
+            // 拖拽指示器
+            if dragState.isDragging {
+                DragIndicatorView(dragState: dragState)
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
             }
         }
         .navigationTitle("CheatHub")
@@ -73,10 +93,18 @@ struct CategorySidebarView: View {
 struct CategoryRowView: View {
     let category: Category
     @ObservedObject var categoryViewModel: CategoryViewModel
+    @ObservedObject var dragState: DragState
+    let index: Int
+    let isPinnedSection: Bool
+
     @State private var isEditing = false
     @State private var editingName = ""
     @State private var showingDeleteAlert = false
     @FocusState private var isTextFieldFocused: Bool
+
+    private var dragData: DragData {
+        DragData(id: category.id?.uuidString ?? "", type: .category, index: index)
+    }
     
     var body: some View {
         HStack {
@@ -114,6 +142,12 @@ struct CategoryRowView: View {
             }
         }
         .contentShape(Rectangle())
+        .draggable(dragData: dragData, dragState: dragState)
+        .droppable(
+            dropData: dragData,
+            dragState: dragState,
+            onDrop: handleDrop
+        )
         .onTapGesture(count: 2) {
             startEditing()
         }
@@ -161,6 +195,26 @@ struct CategoryRowView: View {
         isEditing = false
         isTextFieldFocused = false
     }
+
+    private func handleDrop(draggedItem: DragData, dropTarget: DragData) -> Bool {
+        guard draggedItem.type == .category,
+              draggedItem.id != dropTarget.id else {
+            return false
+        }
+
+        // 检查是否在同一个分组内拖拽
+        let draggedCategory = categoryViewModel.categories.first { $0.id?.uuidString == draggedItem.id }
+        let targetCategory = categoryViewModel.categories.first { $0.id?.uuidString == dropTarget.id }
+
+        guard let draggedCat = draggedCategory,
+              let targetCat = targetCategory,
+              draggedCat.isPinned == targetCat.isPinned else {
+            return false // 不允许跨分组拖拽
+        }
+
+        categoryViewModel.moveCategory(from: draggedItem.index, to: dropTarget.index)
+        return true
+    }
 }
 
 struct EmptyCategoryView: View {
@@ -189,7 +243,7 @@ struct EmptyCategoryView: View {
 #Preview {
     let context = PersistenceController.preview.container.viewContext
     let categoryViewModel = CategoryViewModel(context: context)
-    
+
     return NavigationView {
         CategorySidebarView(categoryViewModel: categoryViewModel)
             .frame(width: 250)
