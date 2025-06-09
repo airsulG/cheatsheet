@@ -1,83 +1,98 @@
-//
-//  ContentView.swift
-//  cheatsheet
-//
-//  Created by 周麒 on 2025/6/9.
-//
-
 import SwiftUI
-import CoreData
+import AppKit
 
 struct ContentView: View {
-    @Environment(\.managedObjectContext) private var viewContext
+    @StateObject private var store = CheatStore()
+    @State private var selectedCategoryID: CheatCategory.ID?
 
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Item.timestamp, ascending: true)],
-        animation: .default)
-    private var items: FetchedResults<Item>
+    @State private var showingAddCategory = false
+    @State private var newCategoryName = ""
 
     var body: some View {
-        NavigationView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp!, formatter: itemFormatter)")
-                    } label: {
-                        Text(item.timestamp!, formatter: itemFormatter)
-                    }
+        NavigationSplitView {
+            List(selection: $selectedCategoryID) {
+                ForEach(store.categories) { category in
+                    Text(category.name)
+                        .tag(category.id)
+                        .contextMenu {
+                            Button("重命名") {
+                                renameCategory(category)
+                            }
+                            Button("删除", role: .destructive) {
+                                if let index = store.categories.firstIndex(where: { $0.id == category.id }) {
+                                    store.deleteCategories(at: IndexSet(integer: index))
+                                }
+                            }
+                        }
                 }
-                .onDelete(perform: deleteItems)
+                .onMove { indices, newOffset in
+                    store.moveCategories(from: indices, to: newOffset)
+                }
             }
             .toolbar {
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
+                ToolbarItem(placement: .primaryAction) {
+                    Button(action: { showingAddCategory = true }) {
+                        Label("新增分类", systemImage: "plus")
                     }
                 }
             }
-            Text("Select an item")
-        }
-    }
-
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(context: viewContext)
-            newItem.timestamp = Date()
-
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
+            .sheet(isPresented: $showingAddCategory) {
+                AddCategorySheet(name: $newCategoryName) { name in
+                    store.addCategory(named: name)
+                    newCategoryName = ""
+                }
+            }
+        } detail: {
+            if let id = selectedCategoryID,
+               let binding = binding(for: id) {
+                CommandListView(category: binding, store: store)
+            } else {
+                Text("请在左侧选择或创建一个分类")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
 
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            offsets.map { items[$0] }.forEach(viewContext.delete)
+    func binding(for id: UUID) -> Binding<CheatCategory>? {
+        guard let index = store.categories.firstIndex(where: { $0.id == id }) else { return nil }
+        return $store.categories[index]
+    }
 
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
-            }
+    func renameCategory(_ category: CheatCategory) {
+        let alert = NSAlert()
+        alert.messageText = "重命名分类"
+        alert.addButton(withTitle: "确定")
+        alert.addButton(withTitle: "取消")
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        input.stringValue = category.name
+        alert.accessoryView = input
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            store.renameCategory(category, newName: input.stringValue)
         }
     }
 }
 
-private let itemFormatter: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateStyle = .short
-    formatter.timeStyle = .medium
-    return formatter
-}()
+struct AddCategorySheet: View {
+    @Binding var name: String
+    var onSave: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
 
-#Preview {
-    ContentView().environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("新建分类").font(.headline)
+            TextField("名称", text: $name)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Button("取消") { dismiss() }
+                Spacer()
+                Button("保存") {
+                    onSave(name)
+                    dismiss()
+                }.disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding()
+        .frame(width: 300)
+    }
 }
