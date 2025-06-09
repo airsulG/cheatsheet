@@ -18,6 +18,7 @@ extension Command {
         self.name = name
         self.content = content
         self.order = 0
+        self.isFavorite = false
         self.createdAt = Date()
         self.updatedAt = Date()
 
@@ -40,8 +41,20 @@ extension Command {
         updateTimestamp()
     }
     
+    // MARK: - Favorite Operations
+
+    func toggleFavorite() {
+        self.isFavorite.toggle()
+        updateTimestamp()
+    }
+
+    func setFavorite(_ favorite: Bool) {
+        self.isFavorite = favorite
+        updateTimestamp()
+    }
+
     // MARK: - Clipboard Operations
-    
+
     func copyToClipboard() {
         ClipboardManager.shared.copy(content ?? "")
     }

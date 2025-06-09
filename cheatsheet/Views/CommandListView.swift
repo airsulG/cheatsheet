@@ -27,6 +27,16 @@ struct CommandListView: View {
         self.category = category
         self.commandViewModel = commandViewModel
     }
+
+    // 计算属性：收藏命令
+    private var favoriteCommands: [Command] {
+        commandViewModel.commands.filter { $0.isFavorite }
+    }
+
+    // 计算属性：普通命令
+    private var regularCommands: [Command] {
+        commandViewModel.commands.filter { !$0.isFavorite }
+    }
     
     var body: some View {
         ZStack {
@@ -50,17 +60,59 @@ struct CommandListView: View {
                     EmptyCommandView(category: category, commandViewModel: commandViewModel)
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: gridColumns, spacing: 12) {
-                            ForEach(Array(commandViewModel.commands.enumerated()), id: \.element.id) { index, command in
-                                CommandItemView(
-                                    command: command,
-                                    commandViewModel: commandViewModel,
-                                    dragState: dragState,
-                                    index: index
-                                )
+                        VStack(spacing: 20) {
+                            // 收藏命令部分
+                            if !favoriteCommands.isEmpty {
+                                VStack(spacing: 12) {
+                                    HStack {
+                                        Text("收藏")
+                                            .font(.title3)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.primary)
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal)
+
+                                    LazyVGrid(columns: gridColumns, spacing: 12) {
+                                        ForEach(Array(favoriteCommands.enumerated()), id: \.element.id) { index, command in
+                                            CommandItemView(
+                                                command: command,
+                                                commandViewModel: commandViewModel,
+                                                dragState: dragState,
+                                                index: index
+                                            )
+                                        }
+                                    }
+                                    .padding(.horizontal)
+                                }
+                            }
+
+                            // 普通命令部分
+                            if !regularCommands.isEmpty {
+                                VStack(spacing: 12) {
+                                    HStack {
+                                        Text("指令")
+                                            .font(.title3)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.primary)
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal)
+
+                                    LazyVGrid(columns: gridColumns, spacing: 12) {
+                                        ForEach(Array(regularCommands.enumerated()), id: \.element.id) { index, command in
+                                            CommandItemView(
+                                                command: command,
+                                                commandViewModel: commandViewModel,
+                                                dragState: dragState,
+                                                index: favoriteCommands.count + index
+                                            )
+                                        }
+                                    }
+                                    .padding(.horizontal)
+                                }
                             }
                         }
-                        .padding(.horizontal)
                         .padding(.top, 0)
                         .padding(.bottom)
 
@@ -157,11 +209,6 @@ struct CommandHeaderView: View {
 
     var body: some View {
         HStack {
-            Text("指令")
-                .font(.title2)
-                .fontWeight(.semibold)
-                .foregroundColor(.primary)
-
             Spacer()
 
             // JSON导入按钮
@@ -208,13 +255,29 @@ struct CommandItemView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // 第一行：命令名称
-            Text(command.name ?? "未命名命令")
-                .font(.headline)
-                .foregroundColor(.primary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // 第一行：命令名称和收藏按钮
+            HStack {
+                Text(command.name ?? "未命名命令")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer()
+
+                Button(action: {
+                    command.toggleFavorite()
+                    commandViewModel.saveContext()
+                }) {
+                    Image(systemName: command.isFavorite ? "heart.fill" : "heart")
+                        .font(.system(size: 14))
+                        .foregroundColor(command.isFavorite ? .red : .secondary)
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in
+                    // 可以添加悬停效果
+                }
+            }
 
             // 第二行：命令内容
             Text(command.content ?? "")
@@ -250,6 +313,11 @@ struct CommandItemView: View {
         .contextMenu {
             Button("复制") {
                 commandViewModel.copyCommand(command)
+            }
+
+            Button(command.isFavorite ? "取消收藏" : "收藏") {
+                command.toggleFavorite()
+                commandViewModel.saveContext()
             }
 
             Button("编辑") {

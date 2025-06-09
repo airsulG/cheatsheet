@@ -161,7 +161,7 @@ class CommandViewModel: ObservableObject {
     
     // MARK: - Helper Methods
     
-    private func saveContext() {
+    func saveContext() {
         do {
             try viewContext.save()
             errorMessage = nil
