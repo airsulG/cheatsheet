@@ -62,11 +62,11 @@ struct CommandListView: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 20) {
-                            // 收藏命令部分
+                            // 快速访问命令部分
                             if !favoriteCommands.isEmpty {
                                 VStack(spacing: 12) {
                                     HStack {
-                                        Text("收藏")
+                                        Text("快速访问")
                                             .font(.title3)
                                             .fontWeight(.semibold)
                                             .foregroundColor(.primary)
@@ -302,9 +302,9 @@ struct CommandItemView: View {
                     command.toggleFavorite()
                     commandViewModel.saveContext()
                 }) {
-                    Image(systemName: command.isFavorite ? "heart.fill" : "heart")
+                    Image(systemName: command.isFavorite ? "bolt.fill" : "bolt")
                         .font(.system(size: 14))
-                        .foregroundColor(command.isFavorite ? .white : .secondary)
+                        .foregroundColor(command.isFavorite ? .yellow : .secondary)
                 }
                 .buttonStyle(.plain)
                 .onHover { hovering in
@@ -348,7 +348,7 @@ struct CommandItemView: View {
                 commandViewModel.copyCommand(command)
             }
 
-            Button(command.isFavorite ? "取消收藏" : "收藏") {
+            Button(command.isFavorite ? "取消快速访问" : "快速访问") {
                 command.toggleFavorite()
                 commandViewModel.saveContext()
             }
