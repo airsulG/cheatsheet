@@ -19,9 +19,10 @@ struct WelcomeView: View {
                 VStack(spacing: 30) {
             // 应用图标和欢迎信息
             VStack(spacing: 16) {
-                Image(systemName: "terminal.fill")
-                    .font(.system(size: 80))
-                    .foregroundStyle(.blue.gradient)
+                Image("iconImage")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 80, height: 80)
 
                 Text("欢迎使用 CheatHub")
                     .font(.title)
@@ -37,24 +38,28 @@ struct WelcomeView: View {
             VStack(spacing: 20) {
                 FeatureRow(
                     icon: "folder.fill",
+                    iconColor: .blue,
                     title: "分类管理",
                     description: "创建分类来组织你的命令"
                 )
-                
+
                 FeatureRow(
                     icon: "doc.on.clipboard.fill",
+                    iconColor: .green,
                     title: "一键复制",
                     description: "点击命令即可复制到剪贴板"
                 )
-                
+
                 FeatureRow(
                     icon: "pin.fill",
+                    iconColor: .orange,
                     title: "固定分类",
                     description: "将常用分类固定到顶部"
                 )
-                
+
                 FeatureRow(
                     icon: "arrow.up.arrow.down",
+                    iconColor: .purple,
                     title: "拖拽排序",
                     description: "拖拽调整分类和命令的顺序"
                 )
@@ -85,26 +90,27 @@ struct WelcomeView: View {
 
 struct FeatureRow: View {
     let icon: String
+    let iconColor: Color
     let title: String
     let description: String
-    
+
     var body: some View {
         HStack(spacing: 16) {
             Image(systemName: icon)
                 .font(.title2)
-                .foregroundColor(.blue)
+                .foregroundColor(iconColor)
                 .frame(width: 30)
-            
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.headline)
                     .foregroundColor(.primary)
-                
+
                 Text(description)
                     .font(.body)
                     .foregroundColor(.secondary)
             }
-            
+
             Spacer()
         }
     }
