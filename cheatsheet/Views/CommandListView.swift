@@ -10,6 +10,10 @@ import SwiftUI
 struct CommandListView: View {
     let category: Category
     @ObservedObject var commandViewModel: CommandViewModel
+
+    @State private var showingAddCommandSheet = false
+    @State private var showingEditCommandSheet = false
+    @State private var editingCommand: Command?
     
     var body: some View {
         VStack(spacing: 0) {
@@ -37,9 +41,12 @@ struct CommandListView: View {
         .navigationTitle(category.name ?? "命令")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button(action: addCommand) {
+                Button(action: {
+                    showingAddCommandSheet = true
+                }) {
                     Label("添加命令", systemImage: "plus")
                 }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
             }
         }
         .overlay(
@@ -62,14 +69,14 @@ struct CommandListView: View {
         .onAppear {
             commandViewModel.fetchCommands(for: category)
         }
-    }
-    
-    private func addCommand() {
-        commandViewModel.createCommand(
-            name: "新命令",
-            content: "echo 'Hello World'",
-            category: category
-        )
+        .sheet(isPresented: $showingAddCommandSheet) {
+            CommandFormView(category: category, commandViewModel: commandViewModel)
+        }
+        .sheet(isPresented: $showingEditCommandSheet) {
+            if let editingCommand = editingCommand {
+                CommandFormView(command: editingCommand, commandViewModel: commandViewModel)
+            }
+        }
     }
 }
 
@@ -115,6 +122,9 @@ struct CategoryHeaderView: View {
 struct CommandItemView: View {
     let command: Command
     @ObservedObject var commandViewModel: CommandViewModel
+
+    @State private var showingEditSheet = false
+    @State private var showingDeleteAlert = false
     
     var body: some View {
         HStack(spacing: 12) {
@@ -156,20 +166,34 @@ struct CommandItemView: View {
         .onTapGesture {
             commandViewModel.copyCommand(command)
         }
+        .onTapGesture(count: 2) {
+            showingEditSheet = true
+        }
         .contextMenu {
             Button("复制") {
                 commandViewModel.copyCommand(command)
             }
 
             Button("编辑") {
-                // TODO: 实现编辑功能
+                showingEditSheet = true
             }
 
             Divider()
 
             Button("删除", role: .destructive) {
+                showingDeleteAlert = true
+            }
+        }
+        .sheet(isPresented: $showingEditSheet) {
+            CommandFormView(command: command, commandViewModel: commandViewModel)
+        }
+        .alert("删除命令", isPresented: $showingDeleteAlert) {
+            Button("取消", role: .cancel) { }
+            Button("删除", role: .destructive) {
                 commandViewModel.deleteCommand(command)
             }
+        } message: {
+            Text("确定要删除命令 \"\(command.name ?? "未命名命令")\" 吗？\n\n此操作无法撤销。")
         }
         .padding(.horizontal)
         .padding(.vertical, 4)
@@ -179,6 +203,8 @@ struct CommandItemView: View {
 struct EmptyCommandView: View {
     let category: Category
     @ObservedObject var commandViewModel: CommandViewModel
+
+    @State private var showingAddCommandSheet = false
     
     var body: some View {
         VStack(spacing: 20) {
@@ -196,15 +222,14 @@ struct EmptyCommandView: View {
                 .multilineTextAlignment(.center)
             
             Button("添加命令") {
-                commandViewModel.createCommand(
-                    name: "新命令",
-                    content: "echo 'Hello World'",
-                    category: category
-                )
+                showingAddCommandSheet = true
             }
             .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .sheet(isPresented: $showingAddCommandSheet) {
+            CommandFormView(category: category, commandViewModel: commandViewModel)
+        }
     }
 }
 
