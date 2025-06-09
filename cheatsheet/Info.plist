@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>CheatHub</string>
+
+	<key>CFBundleIdentifier</key>
+	<string>com.zhouqiaaha.top.cheathub</string>
+
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string> <!-- 指定 Assets.xcassets 中的图标名 -->
+
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string> <!-- 根据你支持的最低 macOS 版本调整 -->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.cheathub.category</string>
+			<key>UTTypeDescription</key>
+			<string>CheatHub Category</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>cheathub-category</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.cheathub.command</string>
+			<key>UTTypeDescription</key>
+			<string>CheatHub Command</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>cheathub-command</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+</dict>
+</plist>

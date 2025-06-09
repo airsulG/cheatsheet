@@ -7,68 +7,59 @@
 
 import SwiftUI
 import CoreData
+import AppKit
 
 struct ContentView: View {
     @Environment(\.managedObjectContext) private var viewContext
 
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Item.timestamp, ascending: true)],
-        animation: .default)
-    private var items: FetchedResults<Item>
+    @StateObject private var categoryViewModel: CategoryViewModel
+    @StateObject private var commandViewModel: CommandViewModel
+
+    init() {
+        let context = PersistenceController.shared.container.viewContext
+        _categoryViewModel = StateObject(wrappedValue: CategoryViewModel(context: context))
+        _commandViewModel = StateObject(wrappedValue: CommandViewModel(context: context))
+    }
 
     var body: some View {
-        NavigationView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp!, formatter: itemFormatter)")
-                    } label: {
-                        Text(item.timestamp!, formatter: itemFormatter)
-                    }
+        ZStack {
+            // 现代化透明磨砂背景
+            VisualEffectView(material: .underWindowBackground, blendingMode: .behindWindow)
+                .ignoresSafeArea()
+
+            // 完全自定义的分割视图布局
+            CustomSplitView {
+                // 左侧分类列表
+                CategorySidebarView(categoryViewModel: categoryViewModel, commandViewModel: commandViewModel)
+                    .background(.clear)
+            } detail: {
+                // 右侧命令列表
+                if let selectedCategory = categoryViewModel.selectedCategory {
+                    CommandListView(category: selectedCategory, commandViewModel: commandViewModel)
+                        .background(.clear)
+                } else {
+                    WelcomeView()
+                        .background(.clear)
                 }
-                .onDelete(perform: deleteItems)
             }
-            .toolbar {
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
-                }
+        }
+        .frame(minWidth: 800, minHeight: 500)
+        .onAppear {
+            categoryViewModel.fetchCategories()
+        }
+        .onChange(of: categoryViewModel.selectedCategory) { category in
+            commandViewModel.fetchCommands(for: category)
+        }
+        .alert("错误", isPresented: .constant(categoryViewModel.errorMessage != nil)) {
+            Button("确定") {
+                categoryViewModel.errorMessage = nil
             }
-            Text("Select an item")
+        } message: {
+            Text(categoryViewModel.errorMessage ?? "")
         }
     }
 
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(context: viewContext)
-            newItem.timestamp = Date()
 
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
-            }
-        }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            offsets.map { items[$0] }.forEach(viewContext.delete)
-
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
-            }
-        }
-    }
 }
 
 private let itemFormatter: DateFormatter = {
