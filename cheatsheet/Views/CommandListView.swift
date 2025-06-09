@@ -12,7 +12,11 @@ struct CommandListView: View {
     @ObservedObject var commandViewModel: CommandViewModel
     
     var body: some View {
-        VStack {
+        VStack(spacing: 0) {
+            // 分类信息头部
+            CategoryHeaderView(category: category)
+
+            // 命令列表内容
             if commandViewModel.isLoading {
                 ProgressView("加载中...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -22,14 +26,17 @@ struct CommandListView: View {
                 List {
                     ForEach(commandViewModel.commands) { command in
                         CommandItemView(command: command, commandViewModel: commandViewModel)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
                     }
                 }
                 .listStyle(PlainListStyle())
+                .background(Color(NSColor.controlBackgroundColor))
             }
         }
         .navigationTitle(category.name ?? "命令")
         .toolbar {
-            ToolbarItem {
+            ToolbarItem(placement: .primaryAction) {
                 Button(action: addCommand) {
                     Label("添加命令", systemImage: "plus")
                 }
@@ -40,7 +47,8 @@ struct CommandListView: View {
             Group {
                 if commandViewModel.showCopyToast {
                     CopyToastView()
-                        .transition(.opacity)
+                        .transition(.opacity.combined(with: .scale))
+                        .animation(.easeInOut(duration: 0.3), value: commandViewModel.showCopyToast)
                 }
             }
         )
@@ -65,35 +73,85 @@ struct CommandListView: View {
     }
 }
 
+struct CategoryHeaderView: View {
+    let category: Category
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(category.name ?? "未命名分类")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+
+                Text("\(category.commandCount) 个命令")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            if category.isPinned {
+                Label("已固定", systemImage: "pin.fill")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(6)
+            }
+        }
+        .padding()
+        .background(Color(NSColor.controlBackgroundColor))
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(Color(NSColor.separatorColor)),
+            alignment: .bottom
+        )
+    }
+}
+
 struct CommandItemView: View {
     let command: Command
     @ObservedObject var commandViewModel: CommandViewModel
     
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(command.name ?? "未命名命令")
                     .font(.headline)
                     .foregroundColor(.primary)
-                
+
                 Text(command.content ?? "")
-                    .font(.body)
+                    .font(.system(.body, design: .monospaced))
                     .foregroundColor(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(3)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color(NSColor.textBackgroundColor))
+                    .cornerRadius(6)
             }
-            
+
             Spacer()
-            
+
             Button(action: {
                 commandViewModel.copyCommand(command)
             }) {
-                Image(systemName: "doc.on.clipboard")
+                Image(systemName: "doc.on.clipboard.fill")
+                    .font(.title3)
                     .foregroundColor(.blue)
             }
             .buttonStyle(PlainButtonStyle())
-            .help("复制命令")
+            .help("复制命令到剪贴板")
         }
-        .padding(.vertical, 4)
+        .padding()
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+        )
         .contentShape(Rectangle())
         .onTapGesture {
             commandViewModel.copyCommand(command)
@@ -102,17 +160,19 @@ struct CommandItemView: View {
             Button("复制") {
                 commandViewModel.copyCommand(command)
             }
-            
+
             Button("编辑") {
                 // TODO: 实现编辑功能
             }
-            
+
             Divider()
-            
+
             Button("删除", role: .destructive) {
                 commandViewModel.deleteCommand(command)
             }
         }
+        .padding(.horizontal)
+        .padding(.vertical, 4)
     }
 }
 

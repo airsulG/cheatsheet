@@ -21,46 +21,20 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: .constant(.all)) {
             // 左侧分类列表
-            List(selection: $categoryViewModel.selectedCategory) {
-                ForEach(categoryViewModel.categories) { category in
-                    HStack {
-                        Text(category.name ?? "未命名分类")
-                        Spacer()
-                        if category.isPinned {
-                            Image(systemName: "pin.fill")
-                                .foregroundColor(.secondary)
-                                .font(.caption)
-                        }
-                        Text("\(category.commandCount)")
-                            .foregroundColor(.secondary)
-                            .font(.caption)
-                    }
-                    .tag(category)
-                }
-            }
-            .navigationTitle("分类")
-            .toolbar {
-                ToolbarItem {
-                    Button(action: addCategory) {
-                        Label("添加分类", systemImage: "plus")
-                    }
-                }
-            }
-            .refreshable {
-                categoryViewModel.fetchCategories()
-            }
+            CategorySidebarView(categoryViewModel: categoryViewModel)
         } detail: {
             // 右侧命令列表
             if let selectedCategory = categoryViewModel.selectedCategory {
                 CommandListView(category: selectedCategory, commandViewModel: commandViewModel)
             } else {
-                Text("请选择一个分类")
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                WelcomeView()
             }
         }
+        .navigationSplitViewColumnWidth(
+            min: 200, ideal: 250, max: 400
+        )
         .frame(minWidth: 600, minHeight: 400)
         .onAppear {
             categoryViewModel.fetchCategories()
@@ -68,13 +42,16 @@ struct ContentView: View {
         .onChange(of: categoryViewModel.selectedCategory) { category in
             commandViewModel.fetchCommands(for: category)
         }
-    }
-
-    private func addCategory() {
-        withAnimation {
-            categoryViewModel.createCategory(name: "新分类")
+        .alert("错误", isPresented: .constant(categoryViewModel.errorMessage != nil)) {
+            Button("确定") {
+                categoryViewModel.errorMessage = nil
+            }
+        } message: {
+            Text(categoryViewModel.errorMessage ?? "")
         }
     }
+
+
 }
 
 private let itemFormatter: DateFormatter = {
