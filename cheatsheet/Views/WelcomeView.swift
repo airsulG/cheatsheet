@@ -64,6 +64,7 @@ struct WelcomeView: View {
                     description: "拖拽调整分类和命令的顺序"
                 )
             }
+            .frame(maxWidth: 400)
             .padding(.horizontal, 40)
             
             // 开始使用提示
