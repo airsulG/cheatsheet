@@ -52,6 +52,7 @@ struct CategorySidebarView: View {
                 }) {
                     Label("添加分类", systemImage: "plus")
                 }
+                .keyboardShortcut("n", modifiers: .command)
             }
         }
         .alert("添加分类", isPresented: $showingAddCategoryAlert) {
@@ -65,6 +66,7 @@ struct CategorySidebarView: View {
         } message: {
             Text("请输入新分类的名称")
         }
+
     }
 }
 
@@ -73,17 +75,21 @@ struct CategoryRowView: View {
     @ObservedObject var categoryViewModel: CategoryViewModel
     @State private var isEditing = false
     @State private var editingName = ""
+    @State private var showingDeleteAlert = false
+    @FocusState private var isTextFieldFocused: Bool
     
     var body: some View {
         HStack {
             if isEditing {
-                TextField("分类名称", text: $editingName, onCommit: {
-                    if !editingName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        categoryViewModel.updateCategory(category, name: editingName)
+                TextField("分类名称", text: $editingName)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .onSubmit {
+                        commitEdit()
                     }
-                    isEditing = false
-                })
-                .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .onExitCommand {
+                        cancelEdit()
+                    }
+                    .focused($isTextFieldFocused)
             } else {
                 HStack {
                     Text(category.name ?? "未命名分类")
@@ -123,14 +129,37 @@ struct CategoryRowView: View {
             Divider()
             
             Button("删除", role: .destructive) {
-                categoryViewModel.deleteCategory(category)
+                showingDeleteAlert = true
             }
         }
+        .alert("删除分类", isPresented: $showingDeleteAlert) {
+            Button("取消", role: .cancel) { }
+            Button("删除", role: .destructive) {
+                categoryViewModel.deleteCategory(category)
+            }
+        } message: {
+            Text("确定要删除分类 \"\(category.name ?? "未命名分类")\" 吗？\n\n此操作将同时删除该分类下的所有命令，且无法撤销。")
+        }
     }
-    
+
     private func startEditing() {
         editingName = category.name ?? ""
         isEditing = true
+        isTextFieldFocused = true
+    }
+
+    private func commitEdit() {
+        if !editingName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            categoryViewModel.updateCategory(category, name: editingName)
+        }
+        isEditing = false
+        isTextFieldFocused = false
+    }
+
+    private func cancelEdit() {
+        editingName = category.name ?? ""
+        isEditing = false
+        isTextFieldFocused = false
     }
 }
 
