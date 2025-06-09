@@ -9,42 +9,65 @@ import SwiftUI
 
 struct CategorySidebarView: View {
     @ObservedObject var categoryViewModel: CategoryViewModel
+    var commandViewModel: CommandViewModel? = nil
     @State private var showingAddCategoryAlert = false
     @State private var newCategoryName = ""
+    @State private var showingImportAlert = false
+    @State private var importJsonText = ""
     @StateObject private var dragState = DragState()
     
     var body: some View {
         VStack(spacing: 0) {
+            // 分类标题
+            HStack {
+                Text("分类")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(.clear)
+
             // 分类列表
             List(selection: $categoryViewModel.selectedCategory) {
-                if !categoryViewModel.pinnedCategories.isEmpty {
-                    Section("固定分类") {
-                        ForEach(Array(categoryViewModel.pinnedCategories.enumerated()), id: \.element.id) { index, category in
-                            CategoryRowView(
-                                category: category,
-                                categoryViewModel: categoryViewModel,
-                                dragState: dragState,
-                                index: index,
-                                isPinnedSection: true
-                            )
-                            .tag(category)
-                        }
+                // 欢迎页选项
+                Button(action: {
+                    categoryViewModel.selectedCategory = nil
+                }) {
+                    HStack {
+                        Text("欢迎页")
+                            .foregroundColor(.primary)
+                        Spacer()
                     }
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(categoryViewModel.selectedCategory == nil ? Color.accentColor.opacity(0.2) : Color.clear)
+
+                // 固定分类
+                ForEach(Array(categoryViewModel.pinnedCategories.enumerated()), id: \.element.id) { index, category in
+                    CategoryRowView(
+                        category: category,
+                        categoryViewModel: categoryViewModel,
+                        dragState: dragState,
+                        index: index,
+                        isPinnedSection: true
+                    )
+                    .tag(category)
                 }
 
-                if !categoryViewModel.unpinnedCategories.isEmpty {
-                    Section(categoryViewModel.pinnedCategories.isEmpty ? "分类" : "其他分类") {
-                        ForEach(Array(categoryViewModel.unpinnedCategories.enumerated()), id: \.element.id) { index, category in
-                            CategoryRowView(
-                                category: category,
-                                categoryViewModel: categoryViewModel,
-                                dragState: dragState,
-                                index: categoryViewModel.pinnedCategories.count + index,
-                                isPinnedSection: false
-                            )
-                            .tag(category)
-                        }
-                    }
+                // 其他分类
+                ForEach(Array(categoryViewModel.unpinnedCategories.enumerated()), id: \.element.id) { index, category in
+                    CategoryRowView(
+                        category: category,
+                        categoryViewModel: categoryViewModel,
+                        dragState: dragState,
+                        index: categoryViewModel.pinnedCategories.count + index,
+                        isPinnedSection: false
+                    )
+                    .tag(category)
                 }
                 
                 if categoryViewModel.categories.isEmpty {
@@ -55,6 +78,7 @@ struct CategorySidebarView: View {
             .refreshable {
                 categoryViewModel.fetchCategories()
             }
+            .padding(.top, 0)
 
             // 拖拽指示器
             if dragState.isDragging {
@@ -62,18 +86,25 @@ struct CategorySidebarView: View {
                     .padding(.horizontal)
                     .padding(.bottom, 8)
             }
-        }
-        .navigationTitle("CheatHub")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+
+            // 底部添加分类按钮
+            HStack {
+                Spacer()
                 Button(action: {
                     showingAddCategoryAlert = true
                     newCategoryName = ""
                 }) {
-                    Label("添加分类", systemImage: "plus")
+                    Image(systemName: "folder.badge.plus")
+                        .font(.title2)
+                        .foregroundColor(.white)
+                        .frame(width: 24, height: 24)
                 }
+                .buttonStyle(.plain)
                 .keyboardShortcut("n", modifiers: .command)
+                Spacer()
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
         .alert("添加分类", isPresented: $showingAddCategoryAlert) {
             TextField("分类名称", text: $newCategoryName)
@@ -86,7 +117,109 @@ struct CategorySidebarView: View {
         } message: {
             Text("请输入新分类的名称")
         }
+        .alert("JSON 批量导入", isPresented: $showingImportAlert) {
+            TextField("JSON 数据", text: $importJsonText, axis: .vertical)
+                .lineLimit(5...10)
+            Button("取消", role: .cancel) {
+                importJsonText = ""
+            }
+            Button("导入") {
+                importFromJson()
+            }
+        } message: {
+            Text("请输入 JSON 格式的命令数据：[{\"name\":\"命令名\",\"prompt\":\"命令内容\"}]")
+        }
+    }
 
+    // MARK: - 视图组件
+
+    private var bottomActionBar: some View {
+        HStack(spacing: 8) {
+            Button(action: {
+                showingAddCategoryAlert = true
+                newCategoryName = ""
+            }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "plus")
+                    Text("添加分类")
+                }
+                .font(.caption)
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .keyboardShortcut("n", modifiers: .command)
+
+            Button(action: {
+                showingImportAlert = true
+                importJsonText = ""
+            }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "square.and.arrow.down")
+                    Text("JSON导入")
+                }
+                .font(.caption)
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            Rectangle()
+                .fill(.regularMaterial)
+                .overlay(
+                    Rectangle()
+                        .frame(height: 1)
+                        .foregroundColor(Color(NSColor.separatorColor))
+                        .opacity(0.5),
+                    alignment: .top
+                )
+        )
+    }
+
+    // MARK: - JSON 导入功能
+
+    private func importFromJson() {
+        guard !importJsonText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+
+        do {
+            guard let jsonData = importJsonText.data(using: .utf8) else {
+                throw ImportError.invalidData
+            }
+
+            let commands = try JSONDecoder().decode([ImportCommand].self, from: jsonData)
+
+            // 创建新分类用于导入的命令
+            let categoryName = "导入的命令 - \(Date().formatted(date: .abbreviated, time: .shortened))"
+            categoryViewModel.createCategory(name: categoryName)
+
+            // 获取刚创建的分类
+            categoryViewModel.fetchCategories()
+            guard let importCategory = categoryViewModel.categories.first(where: { $0.name == categoryName }) else {
+                throw ImportError.invalidFormat
+            }
+
+            // 批量创建命令
+            for command in commands {
+                commandViewModel?.createCommand(
+                    name: command.name,
+                    content: command.prompt,
+                    category: importCategory
+                )
+            }
+
+            // 清空输入
+            importJsonText = ""
+
+            // 刷新分类列表
+            categoryViewModel.fetchCategories()
+
+        } catch {
+            // 处理错误
+            categoryViewModel.errorMessage = "JSON 导入失败：\(error.localizedDescription)"
+        }
     }
 }
 
@@ -142,15 +275,17 @@ struct CategoryRowView: View {
             }
         }
         .contentShape(Rectangle())
+        .onTapGesture {
+            print("🔍 CategoryRowView: 点击分类 \(category.name ?? "未命名")")
+            categoryViewModel.selectedCategory = category
+        }
         .draggable(dragData: dragData, dragState: dragState)
         .droppable(
             dropData: dragData,
             dragState: dragState,
             onDrop: handleDrop
         )
-        .onTapGesture(count: 2) {
-            startEditing()
-        }
+
         .contextMenu {
             Button("重命名") {
                 startEditing()

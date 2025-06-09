@@ -9,18 +9,25 @@ import SwiftUI
 
 struct WelcomeView: View {
     var body: some View {
-        VStack(spacing: 30) {
-            // 应用图标和标题
+        ZStack {
+            // 透明磨砂背景
+            VisualEffectView(material: .underWindowBackground, blendingMode: .behindWindow)
+                .ignoresSafeArea()
+
+            GeometryReader { geometry in
+                ScrollView {
+                VStack(spacing: 30) {
+            // 应用图标和欢迎信息
             VStack(spacing: 16) {
                 Image(systemName: "terminal.fill")
                     .font(.system(size: 80))
                     .foregroundStyle(.blue.gradient)
-                
-                Text("CheatHub")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
+
+                Text("欢迎使用 CheatHub")
+                    .font(.title)
+                    .fontWeight(.semibold)
                     .foregroundColor(.primary)
-                
+
                 Text("你的命令管理中心")
                     .font(.title3)
                     .foregroundColor(.secondary)
@@ -66,11 +73,13 @@ struct WelcomeView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
             }
-            
-            Spacer()
+                }
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: geometry.size.height)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
     }
 }
 

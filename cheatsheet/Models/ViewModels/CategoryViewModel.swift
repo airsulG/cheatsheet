@@ -26,21 +26,28 @@ class CategoryViewModel: ObservableObject {
     // MARK: - Fetch Operations
     
     func fetchCategories() {
-        isLoading = true
-        errorMessage = nil
-        
+        DispatchQueue.main.async {
+            self.isLoading = true
+            self.errorMessage = nil
+        }
+
         let request: NSFetchRequest<Category> = Category.fetchRequest()
         request.sortDescriptors = [
             NSSortDescriptor(keyPath: \Category.isPinned, ascending: false),
             NSSortDescriptor(keyPath: \Category.order, ascending: true)
         ]
-        
+
         do {
-            categories = try viewContext.fetch(request)
-            isLoading = false
+            let fetchedCategories = try viewContext.fetch(request)
+            DispatchQueue.main.async {
+                self.categories = fetchedCategories
+                self.isLoading = false
+            }
         } catch {
-            errorMessage = "获取分类失败: \(error.localizedDescription)"
-            isLoading = false
+            DispatchQueue.main.async {
+                self.errorMessage = "获取分类失败: \(error.localizedDescription)"
+                self.isLoading = false
+            }
         }
     }
     

@@ -19,13 +19,13 @@ struct DragData {
 enum DragType: String, CaseIterable {
     case category = "category"
     case command = "command"
-    
+
     var utType: UTType {
         switch self {
         case .category:
-            return UTType(exportedAs: "com.cheathub.category")
+            return UTType("com.cheathub.category") ?? UTType.data
         case .command:
-            return UTType(exportedAs: "com.cheathub.command")
+            return UTType("com.cheathub.command") ?? UTType.data
         }
     }
 }
@@ -58,15 +58,27 @@ class DragState: ObservableObject {
 struct DraggableModifier: ViewModifier {
     let dragData: DragData
     @ObservedObject var dragState: DragState
-    
+    @State private var dragTimer: Timer?
+    @State private var isLongPressing = false
+
     func body(content: Content) -> some View {
         content
             .opacity(dragState.draggedItem?.id == dragData.id ? 0.5 : 1.0)
             .scaleEffect(dragState.draggedItem?.id == dragData.id ? 0.95 : 1.0)
             .animation(.easeInOut(duration: 0.2), value: dragState.isDragging)
+            .onLongPressGesture(minimumDuration: 0.5) {
+                // 长按0.5秒后启用拖拽
+                isLongPressing = true
+            }
             .onDrag {
-                dragState.startDrag(item: dragData)
-                return NSItemProvider(object: dragData.id as NSString)
+                // 只有在长按后才允许拖拽
+                if isLongPressing {
+                    dragState.startDrag(item: dragData)
+                    isLongPressing = false
+                    return NSItemProvider(object: dragData.id as NSString)
+                } else {
+                    return NSItemProvider()
+                }
             }
     }
 }

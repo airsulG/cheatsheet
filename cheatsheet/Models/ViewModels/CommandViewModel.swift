@@ -30,25 +30,35 @@ class CommandViewModel: ObservableObject {
     
     func fetchCommands(for category: Category?) {
         currentCategory = category
-        isLoading = true
-        errorMessage = nil
-        
+
+        DispatchQueue.main.async {
+            self.isLoading = true
+            self.errorMessage = nil
+        }
+
         guard let category = category else {
-            commands = []
-            isLoading = false
+            DispatchQueue.main.async {
+                self.commands = []
+                self.isLoading = false
+            }
             return
         }
-        
+
         let request: NSFetchRequest<Command> = Command.fetchRequest()
         request.predicate = NSPredicate(format: "category == %@", category)
         request.sortDescriptors = [NSSortDescriptor(keyPath: \Command.order, ascending: true)]
-        
+
         do {
-            commands = try viewContext.fetch(request)
-            isLoading = false
+            let fetchedCommands = try viewContext.fetch(request)
+            DispatchQueue.main.async {
+                self.commands = fetchedCommands
+                self.isLoading = false
+            }
         } catch {
-            errorMessage = "获取命令失败: \(error.localizedDescription)"
-            isLoading = false
+            DispatchQueue.main.async {
+                self.errorMessage = "获取命令失败: \(error.localizedDescription)"
+                self.isLoading = false
+            }
         }
     }
     

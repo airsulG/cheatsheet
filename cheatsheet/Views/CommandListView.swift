@@ -14,52 +14,65 @@ struct CommandListView: View {
     @State private var showingAddCommandSheet = false
     @State private var showingEditCommandSheet = false
     @State private var editingCommand: Command?
+    @State private var showingImportAlert = false
+    @State private var importJsonText = ""
     @StateObject private var dragState = DragState()
+
+    // 网格列配置：自适应列，最小宽度 240pt，最大宽度 320pt
+    private let gridColumns = [
+        GridItem(.adaptive(minimum: 240, maximum: 320), spacing: 12)
+    ]
+
+    init(category: Category, commandViewModel: CommandViewModel) {
+        self.category = category
+        self.commandViewModel = commandViewModel
+    }
     
     var body: some View {
-        VStack(spacing: 0) {
-            // 分类信息头部
-            CategoryHeaderView(category: category)
+        ZStack {
+            // 透明磨砂背景
+            VisualEffectView(material: .underWindowBackground, blendingMode: .behindWindow)
+                .ignoresSafeArea()
 
-            // 命令列表内容
-            if commandViewModel.isLoading {
-                ProgressView("加载中...")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if commandViewModel.commands.isEmpty {
-                EmptyCommandView(category: category, commandViewModel: commandViewModel)
-            } else {
-                List {
-                    ForEach(Array(commandViewModel.commands.enumerated()), id: \.element.id) { index, command in
-                        CommandItemView(
-                            command: command,
-                            commandViewModel: commandViewModel,
-                            dragState: dragState,
-                            index: index
-                        )
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                    }
-                }
-                .listStyle(PlainListStyle())
-                .background(Color(NSColor.controlBackgroundColor))
+            VStack(spacing: 0) {
+                // 命令面板标题和操作按钮
+                CommandHeaderView(
+                    category: category,
+                    showingAddCommandSheet: $showingAddCommandSheet,
+                    showingImportAlert: $showingImportAlert
+                )
 
-                // 拖拽指示器
-                if dragState.isDragging {
-                    DragIndicatorView(dragState: dragState)
+                // 命令列表内容
+                if commandViewModel.isLoading {
+                    ProgressView("加载中...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if commandViewModel.commands.isEmpty {
+                    EmptyCommandView(category: category, commandViewModel: commandViewModel)
+                } else {
+                    ScrollView {
+                        LazyVGrid(columns: gridColumns, spacing: 12) {
+                            ForEach(Array(commandViewModel.commands.enumerated()), id: \.element.id) { index, command in
+                                CommandItemView(
+                                    command: command,
+                                    commandViewModel: commandViewModel,
+                                    dragState: dragState,
+                                    index: index
+                                )
+                            }
+                        }
                         .padding(.horizontal)
-                        .padding(.bottom, 8)
+                        .padding(.top, 0)
+                        .padding(.bottom)
+
+                        // 拖拽指示器
+                        if dragState.isDragging {
+                            DragIndicatorView(dragState: dragState)
+                                .padding(.horizontal)
+                                .padding(.bottom, 8)
+                        }
+                    }
+                    .background(.clear)
                 }
-            }
-        }
-        .navigationTitle(category.name ?? "命令")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button(action: {
-                    showingAddCommandSheet = true
-                }) {
-                    Label("添加命令", systemImage: "plus")
-                }
-                .keyboardShortcut("n", modifiers: [.command, .shift])
             }
         }
         .overlay(
@@ -90,45 +103,93 @@ struct CommandListView: View {
                 CommandFormView(command: editingCommand, commandViewModel: commandViewModel)
             }
         }
+        .alert("JSON 批量导入", isPresented: $showingImportAlert) {
+            TextField("JSON 数据", text: $importJsonText, axis: .vertical)
+                .lineLimit(5...10)
+            Button("取消", role: .cancel) {
+                importJsonText = ""
+            }
+            Button("导入") {
+                importFromJson()
+            }
+        } message: {
+            Text("请输入 JSON 格式的命令数据：[{\"name\":\"命令名\",\"prompt\":\"命令内容\"}]")
+        }
+    }
+
+    // MARK: - JSON 导入功能
+
+    private func importFromJson() {
+        guard !importJsonText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+
+        do {
+            guard let jsonData = importJsonText.data(using: .utf8) else {
+                throw ImportError.invalidData
+            }
+
+            let commands = try JSONDecoder().decode([ImportCommand].self, from: jsonData)
+
+            // 批量创建命令到当前分类
+            for command in commands {
+                commandViewModel.createCommand(
+                    name: command.name,
+                    content: command.prompt,
+                    category: category
+                )
+            }
+
+            // 清空输入
+            importJsonText = ""
+
+        } catch {
+            // 处理错误
+            commandViewModel.errorMessage = "JSON 导入失败：\(error.localizedDescription)"
+        }
     }
 }
 
-struct CategoryHeaderView: View {
+struct CommandHeaderView: View {
     let category: Category
+    @Binding var showingAddCommandSheet: Bool
+    @Binding var showingImportAlert: Bool
 
     var body: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(category.name ?? "未命名分类")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-
-                Text("\(category.commandCount) 个命令")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
+            Text("指令")
+                .font(.title2)
+                .fontWeight(.semibold)
+                .foregroundColor(.primary)
 
             Spacer()
 
-            if category.isPinned {
-                Label("已固定", systemImage: "pin.fill")
-                    .font(.caption)
-                    .foregroundColor(.orange)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.orange.opacity(0.1))
-                    .cornerRadius(6)
+            // JSON导入按钮
+            Button(action: {
+                showingImportAlert = true
+            }) {
+                Image(systemName: "square.and.arrow.down")
+                    .font(.title2)
+                    .foregroundColor(.white)
+                    .frame(width: 24, height: 24)
             }
+            .buttonStyle(.plain)
+
+            // 添加命令按钮
+            Button(action: {
+                showingAddCommandSheet = true
+            }) {
+                Image(systemName: "plus")
+                    .font(.title2)
+                    .foregroundColor(.white)
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut("n", modifiers: [.command, .shift])
         }
-        .padding()
-        .background(Color(NSColor.controlBackgroundColor))
-        .overlay(
-            Rectangle()
-                .frame(height: 1)
-                .foregroundColor(Color(NSColor.separatorColor)),
-            alignment: .bottom
-        )
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(.clear)
     }
 }
 
@@ -146,41 +207,33 @@ struct CommandItemView: View {
     }
     
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(command.name ?? "未命名命令")
-                    .font(.headline)
-                    .foregroundColor(.primary)
+        VStack(alignment: .leading, spacing: 8) {
+            // 第一行：命令名称
+            Text(command.name ?? "未命名命令")
+                .font(.headline)
+                .foregroundColor(.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text(command.content ?? "")
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .lineLimit(3)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color(NSColor.textBackgroundColor))
-                    .cornerRadius(6)
-            }
-
-            Spacer()
-
-            Button(action: {
-                commandViewModel.copyCommand(command)
-            }) {
-                Image(systemName: "doc.on.clipboard.fill")
-                    .font(.title3)
-                    .foregroundColor(.blue)
-            }
-            .buttonStyle(PlainButtonStyle())
-            .help("复制命令到剪贴板")
+            // 第二行：命令内容
+            Text(command.content ?? "")
+                .font(.system(.body, design: .monospaced))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding()
+        .frame(height: 60)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .background(Color(NSColor.controlBackgroundColor))
         .cornerRadius(8)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color(NSColor.separatorColor), lineWidth: 1)
         )
+        .shadow(color: Color.black.opacity(0.05), radius: 1, x: 0, y: 1)
         .contentShape(Rectangle())
         .draggable(dragData: dragData, dragState: dragState)
         .droppable(
@@ -220,8 +273,6 @@ struct CommandItemView: View {
         } message: {
             Text("确定要删除命令 \"\(command.name ?? "未命名命令")\" 吗？\n\n此操作无法撤销。")
         }
-        .padding(.horizontal)
-        .padding(.vertical, 4)
     }
 
     private func handleDrop(draggedItem: DragData, dropTarget: DragData) -> Bool {
@@ -283,6 +334,27 @@ struct CopyToastView: View {
         .shadow(radius: 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .padding(.top, 20)
+    }
+}
+
+// MARK: - 导入数据模型
+
+struct ImportCommand: Codable {
+    let name: String
+    let prompt: String
+}
+
+enum ImportError: LocalizedError {
+    case invalidData
+    case invalidFormat
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidData:
+            return "无效的 JSON 数据"
+        case .invalidFormat:
+            return "JSON 格式不正确，请使用 [{\"name\":\"命令名\",\"prompt\":\"命令内容\"}] 格式"
+        }
     }
 }
 

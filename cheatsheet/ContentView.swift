@@ -7,6 +7,7 @@
 
 import SwiftUI
 import CoreData
+import AppKit
 
 struct ContentView: View {
     @Environment(\.managedObjectContext) private var viewContext
@@ -21,21 +22,28 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView(columnVisibility: .constant(.all)) {
-            // 左侧分类列表
-            CategorySidebarView(categoryViewModel: categoryViewModel)
-        } detail: {
-            // 右侧命令列表
-            if let selectedCategory = categoryViewModel.selectedCategory {
-                CommandListView(category: selectedCategory, commandViewModel: commandViewModel)
-            } else {
-                WelcomeView()
+        ZStack {
+            // 现代化透明磨砂背景
+            VisualEffectView(material: .underWindowBackground, blendingMode: .behindWindow)
+                .ignoresSafeArea()
+
+            // 完全自定义的分割视图布局
+            CustomSplitView {
+                // 左侧分类列表
+                CategorySidebarView(categoryViewModel: categoryViewModel, commandViewModel: commandViewModel)
+                    .background(.clear)
+            } detail: {
+                // 右侧命令列表
+                if let selectedCategory = categoryViewModel.selectedCategory {
+                    CommandListView(category: selectedCategory, commandViewModel: commandViewModel)
+                        .background(.clear)
+                } else {
+                    WelcomeView()
+                        .background(.clear)
+                }
             }
         }
-        .navigationSplitViewColumnWidth(
-            min: 200, ideal: 250, max: 400
-        )
-        .frame(minWidth: 600, minHeight: 400)
+        .frame(minWidth: 800, minHeight: 500)
         .onAppear {
             categoryViewModel.fetchCategories()
         }
