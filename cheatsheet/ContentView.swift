@@ -12,60 +12,60 @@ struct ContentView: View {
     @Environment(\.managedObjectContext) private var viewContext
 
     @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Item.timestamp, ascending: true)],
+        sortDescriptors: [
+            NSSortDescriptor(keyPath: \Category.isPinned, ascending: false),
+            NSSortDescriptor(keyPath: \Category.order, ascending: true)
+        ],
         animation: .default)
-    private var items: FetchedResults<Item>
+    private var categories: FetchedResults<Category>
 
     var body: some View {
-        NavigationView {
+        NavigationSplitView {
+            // 左侧分类列表
             List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp!, formatter: itemFormatter)")
-                    } label: {
-                        Text(item.timestamp!, formatter: itemFormatter)
+                ForEach(categories) { category in
+                    NavigationLink(value: category) {
+                        HStack {
+                            Text(category.name ?? "未命名分类")
+                            Spacer()
+                            if category.isPinned {
+                                Image(systemName: "pin.fill")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
+                            }
+                            Text("\(category.commandCount)")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
                     }
                 }
-                .onDelete(perform: deleteItems)
             }
+            .navigationTitle("分类")
             .toolbar {
                 ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
+                    Button(action: addCategory) {
+                        Label("添加分类", systemImage: "plus")
                     }
                 }
             }
-            Text("Select an item")
+        } detail: {
+            // 右侧命令列表
+            Text("请选择一个分类")
+                .foregroundColor(.secondary)
         }
+        .frame(minWidth: 600, minHeight: 400)
     }
 
-    private func addItem() {
+    private func addCategory() {
         withAnimation {
-            let newItem = Item(context: viewContext)
-            newItem.timestamp = Date()
+            let newCategory = Category(context: viewContext, name: "新分类")
+            newCategory.order = Int32(categories.count)
 
             do {
                 try viewContext.save()
             } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
                 let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
-            }
-        }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            offsets.map { items[$0] }.forEach(viewContext.delete)
-
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
+                print("添加分类失败: \(nsError), \(nsError.userInfo)")
             }
         }
     }

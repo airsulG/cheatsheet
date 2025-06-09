@@ -14,15 +14,47 @@ struct PersistenceController {
     static let preview: PersistenceController = {
         let result = PersistenceController(inMemory: true)
         let viewContext = result.container.viewContext
-        for _ in 0..<10 {
-            let newItem = Item(context: viewContext)
-            newItem.timestamp = Date()
+
+        // 创建示例分类
+        let dockerCategory = Category(context: viewContext, name: "Docker")
+        dockerCategory.isPinned = true
+        dockerCategory.order = 0
+
+        let gitCategory = Category(context: viewContext, name: "Git")
+        gitCategory.isPinned = true
+        gitCategory.order = 1
+
+        let opensslCategory = Category(context: viewContext, name: "OpenSSL")
+        opensslCategory.order = 2
+
+        // 创建示例命令
+        let dockerCommands = [
+            ("进入运行中的容器", "docker exec -it [容器名/ID] /bin/bash"),
+            ("查看所有容器", "docker ps -a"),
+            ("清理未使用资源", "docker system prune -a"),
+            ("启动服务 (Compose)", "docker-compose up -d")
+        ]
+
+        for (index, (name, content)) in dockerCommands.enumerated() {
+            let command = Command(context: viewContext, name: name, content: content, category: dockerCategory)
+            command.order = Int32(index)
         }
+
+        let gitCommands = [
+            ("查看状态", "git status"),
+            ("提交更改", "git commit -m \"[message]\""),
+            ("推送到远程", "git push origin [branch]"),
+            ("拉取最新", "git pull origin [branch]")
+        ]
+
+        for (index, (name, content)) in gitCommands.enumerated() {
+            let command = Command(context: viewContext, name: name, content: content, category: gitCategory)
+            command.order = Int32(index)
+        }
+
         do {
             try viewContext.save()
         } catch {
-            // Replace this implementation with code to handle the error appropriately.
-            // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
             let nsError = error as NSError
             fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
         }
