@@ -14,8 +14,8 @@ struct CommandListView: View {
     @State private var showingAddCommandSheet = false
     @State private var showingEditCommandSheet = false
     @State private var editingCommand: Command?
-    @State private var showingImportAlert = false
-    @State private var importJsonText = ""
+    @State private var showingImportPanel = false
+    @State private var showingExportAlert = false
     @StateObject private var dragState = DragState()
 
     // 网格列配置：自适应列，最小宽度 240pt，最大宽度 320pt
@@ -49,7 +49,8 @@ struct CommandListView: View {
                 CommandHeaderView(
                     category: category,
                     showingAddCommandSheet: $showingAddCommandSheet,
-                    showingImportAlert: $showingImportAlert
+                    showingImportPanel: $showingImportPanel,
+                    showingExportAlert: $showingExportAlert
                 )
 
                 // 命令列表内容
@@ -155,49 +156,39 @@ struct CommandListView: View {
                 CommandFormView(command: editingCommand, commandViewModel: commandViewModel)
             }
         }
-        .alert("JSON 批量导入", isPresented: $showingImportAlert) {
-            TextField("JSON 数据", text: $importJsonText, axis: .vertical)
-                .lineLimit(5...10)
-            Button("取消", role: .cancel) {
-                importJsonText = ""
+        .sheet(isPresented: $showingImportPanel) {
+            ImportPanelView(category: category, commandViewModel: commandViewModel)
+        }
+        .alert("导出命令", isPresented: $showingExportAlert) {
+            Button("复制到剪贴板") {
+                copyExportToClipboard()
             }
-            Button("导入") {
-                importFromJson()
-            }
+            Button("取消", role: .cancel) { }
         } message: {
-            Text("请输入 JSON 格式的命令数据：[{\"name\":\"命令名\",\"prompt\":\"命令内容\"}]")
+            Text("导出当前分类的所有命令为 JSON 格式")
         }
     }
 
-    // MARK: - JSON 导入功能
+    // MARK: - JSON 导出功能
 
-    private func importFromJson() {
-        guard !importJsonText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return
+    private func copyExportToClipboard() {
+        let exportCommands = commandViewModel.commands.map { command in
+            ImportCommand(name: command.name ?? "", prompt: command.content ?? "")
         }
 
         do {
-            guard let jsonData = importJsonText.data(using: .utf8) else {
-                throw ImportError.invalidData
+            let jsonData = try JSONEncoder().encode(exportCommands)
+            if let jsonString = String(data: jsonData, encoding: .utf8) {
+                ClipboardManager.shared.copy(jsonString)
+                commandViewModel.showCopyToast = true
+
+                // 3秒后隐藏提示
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    commandViewModel.showCopyToast = false
+                }
             }
-
-            let commands = try JSONDecoder().decode([ImportCommand].self, from: jsonData)
-
-            // 批量创建命令到当前分类
-            for command in commands {
-                commandViewModel.createCommand(
-                    name: command.name,
-                    content: command.prompt,
-                    category: category
-                )
-            }
-
-            // 清空输入
-            importJsonText = ""
-
         } catch {
-            // 处理错误
-            commandViewModel.errorMessage = "JSON 导入失败：\(error.localizedDescription)"
+            commandViewModel.errorMessage = "导出失败：\(error.localizedDescription)"
         }
     }
 }
@@ -205,20 +196,52 @@ struct CommandListView: View {
 struct CommandHeaderView: View {
     let category: Category
     @Binding var showingAddCommandSheet: Bool
-    @Binding var showingImportAlert: Bool
+    @Binding var showingImportPanel: Bool
+    @Binding var showingExportAlert: Bool
 
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
             Spacer()
+
+            // 导出按钮
+            Button(action: {
+                showingExportAlert = true
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 14))
+                        .foregroundColor(.white)
+                    Text("导出")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .stroke(Color.gray.opacity(0.6), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
 
             // JSON导入按钮
             Button(action: {
-                showingImportAlert = true
+                showingImportPanel = true
             }) {
-                Image(systemName: "square.and.arrow.down")
-                    .font(.title2)
-                    .foregroundColor(.white)
-                    .frame(width: 24, height: 24)
+                HStack(spacing: 6) {
+                    Image(systemName: "square.and.arrow.down")
+                        .font(.system(size: 14))
+                        .foregroundColor(.white)
+                    Text("批量导入")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .stroke(Color.gray.opacity(0.6), lineWidth: 1)
+                )
             }
             .buttonStyle(.plain)
 
@@ -226,10 +249,20 @@ struct CommandHeaderView: View {
             Button(action: {
                 showingAddCommandSheet = true
             }) {
-                Image(systemName: "plus")
-                    .font(.title2)
-                    .foregroundColor(.white)
-                    .frame(width: 24, height: 24)
+                HStack(spacing: 6) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 14))
+                        .foregroundColor(.white)
+                    Text("添加")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .stroke(Color.gray.opacity(0.6), lineWidth: 1)
+                )
             }
             .buttonStyle(.plain)
             .keyboardShortcut("n", modifiers: [.command, .shift])
@@ -271,7 +304,7 @@ struct CommandItemView: View {
                 }) {
                     Image(systemName: command.isFavorite ? "heart.fill" : "heart")
                         .font(.system(size: 14))
-                        .foregroundColor(command.isFavorite ? .red : .secondary)
+                        .foregroundColor(command.isFavorite ? .white : .secondary)
                 }
                 .buttonStyle(.plain)
                 .onHover { hovering in

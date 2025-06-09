@@ -94,10 +94,14 @@ struct CategorySidebarView: View {
                     showingAddCategoryAlert = true
                     newCategoryName = ""
                 }) {
-                    Image(systemName: "folder.badge.plus")
-                        .font(.title2)
-                        .foregroundColor(.white)
-                        .frame(width: 24, height: 24)
+                    HStack(spacing: 6) {
+                        Image(systemName: "folder.badge.plus")
+                            .font(.title2)
+                            .foregroundColor(.white)
+                        Text("添加主题")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.white)
+                    }
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut("n", modifiers: .command)
