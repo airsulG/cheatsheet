@@ -52,6 +52,11 @@ struct PersistenceController {
             command.order = Int32(index)
         }
 
+        // 创建示例剪贴板历史 (同步创建，时间不同)
+        let item1 = ClipboardItem(context: viewContext, content: "Preview clipboard item 1: git log --oneline")
+        item1.createdAt = Date().addingTimeInterval(-60) // 1 minute ago
+        let _ = ClipboardItem(context: viewContext, content: "Preview clipboard item 2: npm install")
+
         do {
             try viewContext.save()
         } catch {

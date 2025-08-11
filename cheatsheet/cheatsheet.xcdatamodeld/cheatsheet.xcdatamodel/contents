@@ -9,6 +9,13 @@
         <attribute name="updatedAt" optional="NO" attributeType="Date" usesScalarValueType="NO"/>
         <relationship name="commands" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="Command" inverseName="category" inverseEntity="Command"/>
     </entity>
+    <entity name="ClipboardItem" representedClassName="ClipboardItem" syncable="YES" codeGenerationType="class">
+        <attribute name="id" optional="NO" attributeType="UUID"/>
+        <attribute name="createdAt" optional="NO" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="type" optional="NO" attributeType="String" defaultValueString="text"/>
+        <attribute name="content" optional="YES" attributeType="String"/>
+        <attribute name="data" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES"/>
+    </entity>
     <entity name="Command" representedClassName="Command" syncable="YES" codeGenerationType="class">
         <attribute name="content" optional="NO" attributeType="String"/>
         <attribute name="createdAt" optional="NO" attributeType="Date" usesScalarValueType="NO"/>
@@ -21,6 +28,7 @@
     </entity>
     <elements>
         <element name="Category" positionX="-63" positionY="-18" width="128" height="148"/>
-        <element name="Command" positionX="126" positionY="-18" width="128" height="148"/>
+        <element name="ClipboardItem" positionX="-63" positionY="163" width="128" height="120"/>
+        <element name="Command" positionX="128" positionY="-18" width="128" height="148"/>
     </elements>
 </model>

@@ -12,33 +12,59 @@ import AppKit
 struct ContentView: View {
     @Environment(\.managedObjectContext) private var viewContext
 
+    // MARK: - View Models
     @StateObject private var categoryViewModel: CategoryViewModel
     @StateObject private var commandViewModel: CommandViewModel
+    @StateObject private var clipboardHistoryViewModel: ClipboardHistoryViewModel
+
+    // MARK: - State
+    enum MainContentState: Equatable {
+        case welcome
+        case clipboardHistory
+        case category(Category)
+
+        static func == (lhs: ContentView.MainContentState, rhs: ContentView.MainContentState) -> Bool {
+            switch (lhs, rhs) {
+            case (.welcome, .welcome): return true
+            case (.clipboardHistory, .clipboardHistory): return true
+            case (.category(let lCat), .category(let rCat)): return lCat.objectID == rCat.objectID
+            default: return false
+            }
+        }
+    }
+    @State private var mainContentState: MainContentState = .welcome
 
     init() {
         let context = PersistenceController.shared.container.viewContext
         _categoryViewModel = StateObject(wrappedValue: CategoryViewModel(context: context))
         _commandViewModel = StateObject(wrappedValue: CommandViewModel(context: context))
+        _clipboardHistoryViewModel = StateObject(wrappedValue: ClipboardHistoryViewModel(context: context))
     }
 
     var body: some View {
         ZStack {
-            // 现代化透明磨砂背景
             VisualEffectView(material: .underWindowBackground, blendingMode: .behindWindow)
                 .ignoresSafeArea()
 
-            // 完全自定义的分割视图布局
             CustomSplitView {
                 // 左侧分类列表
-                CategorySidebarView(categoryViewModel: categoryViewModel, commandViewModel: commandViewModel)
+                CategorySidebarView(
+                    categoryViewModel: categoryViewModel,
+                    commandViewModel: commandViewModel,
+                    mainContentState: $mainContentState
+                )
                     .background(.clear)
             } detail: {
-                // 右侧命令列表
-                if let selectedCategory = categoryViewModel.selectedCategory {
-                    CommandListView(category: selectedCategory, commandViewModel: commandViewModel)
-                        .background(.clear)
-                } else {
+                // 右侧主内容区
+                switch mainContentState {
+                case .welcome:
                     WelcomeView()
+                        .background(.clear)
+                case .clipboardHistory:
+                    ClipboardHistoryView(viewModel: clipboardHistoryViewModel)
+                        .background(.clear)
+                case .category(let selectedCategory):
+                    CommandListView(category: selectedCategory, commandViewModel: commandViewModel)
                         .background(.clear)
                 }
             }
@@ -47,8 +73,21 @@ struct ContentView: View {
         .onAppear {
             categoryViewModel.fetchCategories()
         }
-        .onChange(of: categoryViewModel.selectedCategory) { category in
-            commandViewModel.fetchCommands(for: category)
+        // 双向同步: mainContentState -> selectedCategory
+        .onChange(of: mainContentState) { newState in
+            switch newState {
+            case .category(let category):
+                categoryViewModel.selectedCategory = category
+                commandViewModel.fetchCommands(for: category)
+            default:
+                categoryViewModel.selectedCategory = nil
+            }
+        }
+        // 双向同步: selectedCategory -> mainContentState
+        .onChange(of: categoryViewModel.selectedCategory) { newCategory in
+            if let category = newCategory {
+                mainContentState = .category(category)
+            }
         }
         .alert("错误", isPresented: .constant(categoryViewModel.errorMessage != nil)) {
             Button("确定") {
@@ -58,8 +97,6 @@ struct ContentView: View {
             Text(categoryViewModel.errorMessage ?? "")
         }
     }
-
-
 }
 
 private let itemFormatter: DateFormatter = {

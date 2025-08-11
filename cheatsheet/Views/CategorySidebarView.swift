@@ -10,6 +10,7 @@ import SwiftUI
 struct CategorySidebarView: View {
     @ObservedObject var categoryViewModel: CategoryViewModel
     var commandViewModel: CommandViewModel? = nil
+    @Binding var mainContentState: ContentView.MainContentState
     @State private var showingAddCategoryAlert = false
     @State private var newCategoryName = ""
     @State private var showingImportAlert = false
@@ -34,17 +35,30 @@ struct CategorySidebarView: View {
             List(selection: $categoryViewModel.selectedCategory) {
                 // 欢迎页选项
                 Button(action: {
-                    categoryViewModel.selectedCategory = nil
+                    mainContentState = .welcome
                 }) {
                     HStack {
                         Text("欢迎页")
                             .foregroundColor(.primary)
                         Spacer()
                     }
-                    .padding(.vertical, 4)
                 }
                 .buttonStyle(.plain)
-                .listRowBackground(categoryViewModel.selectedCategory == nil ? Color.accentColor.opacity(0.2) : Color.clear)
+                .listRowBackground(mainContentState == .welcome ? Color.accentColor.opacity(0.2) : Color.clear)
+
+                // 剪贴板历史选项
+                Button(action: {
+                    mainContentState = .clipboardHistory
+                }) {
+                    HStack {
+                        Image(systemName: "doc.on.clipboard")
+                        Text("剪贴板")
+                            .foregroundColor(.primary)
+                        Spacer()
+                    }
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(mainContentState == .clipboardHistory ? Color.accentColor.opacity(0.2) : Color.clear)
 
                 // 固定分类
                 ForEach(Array(categoryViewModel.pinnedCategories.enumerated()), id: \.element.id) { index, category in
@@ -54,7 +68,7 @@ struct CategorySidebarView: View {
                         dragState: dragState,
                         index: index,
                         isPinnedSection: true
-                    )
+                    ).id(category.id) // Ensure unique ID for rows
                     .tag(category)
                 }
 
@@ -66,7 +80,7 @@ struct CategorySidebarView: View {
                         dragState: dragState,
                         index: categoryViewModel.pinnedCategories.count + index,
                         isPinnedSection: false
-                    )
+                    ).id(category.id) // Ensure unique ID for rows
                     .tag(category)
                 }
                 
@@ -230,6 +244,7 @@ struct CategorySidebarView: View {
 struct CategoryRowView: View {
     let category: Category
     @ObservedObject var categoryViewModel: CategoryViewModel
+    // This binding is no longer needed here as selection is handled by List
     @ObservedObject var dragState: DragState
     let index: Int
     let isPinnedSection: Bool
@@ -279,10 +294,6 @@ struct CategoryRowView: View {
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture {
-            print("🔍 CategoryRowView: 点击分类 \(category.name ?? "未命名")")
-            categoryViewModel.selectedCategory = category
-        }
         .draggable(dragData: dragData, dragState: dragState)
         .droppable(
             dropData: dragData,
@@ -382,9 +393,10 @@ struct EmptyCategoryView: View {
 #Preview {
     let context = PersistenceController.preview.container.viewContext
     let categoryViewModel = CategoryViewModel(context: context)
+    @State var state: ContentView.MainContentState = .welcome
 
     return NavigationView {
-        CategorySidebarView(categoryViewModel: categoryViewModel)
+        CategorySidebarView(categoryViewModel: categoryViewModel, mainContentState: $state)
             .frame(width: 250)
     }
 }
