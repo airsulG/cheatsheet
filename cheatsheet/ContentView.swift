@@ -73,20 +73,13 @@ struct ContentView: View {
         .onAppear {
             categoryViewModel.fetchCategories()
         }
-        // 双向同步: mainContentState -> selectedCategory
+        // 当 mainContentState 改变时，加载对应的数据
         .onChange(of: mainContentState) { newState in
             switch newState {
             case .category(let category):
-                categoryViewModel.selectedCategory = category
                 commandViewModel.fetchCommands(for: category)
             default:
-                categoryViewModel.selectedCategory = nil
-            }
-        }
-        // 双向同步: selectedCategory -> mainContentState
-        .onChange(of: categoryViewModel.selectedCategory) { newCategory in
-            if let category = newCategory {
-                mainContentState = .category(category)
+                break
             }
         }
         .alert("错误", isPresented: .constant(categoryViewModel.errorMessage != nil)) {

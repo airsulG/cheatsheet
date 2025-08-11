@@ -9,7 +9,11 @@ import SwiftUI
 
 struct ClipboardHistoryView: View {
     @ObservedObject var viewModel: ClipboardHistoryViewModel
-    
+
+    private let gridColumns = [
+        GridItem(.adaptive(minimum: 240, maximum: 320), spacing: 12)
+    ]
+
     var body: some View {
         ZStack {
             VisualEffectView(material: .underWindowBackground, blendingMode: .behindWindow)
@@ -19,7 +23,7 @@ struct ClipboardHistoryView: View {
                 // Header
                 HStack {
                     Text("剪贴板")
-                        .font(.title)
+                        .font(.largeTitle)
                         .fontWeight(.bold)
                     Text("(\(viewModel.items.count)条记录)")
                         .font(.title3)
@@ -32,7 +36,8 @@ struct ClipboardHistoryView: View {
                     }
                     .buttonStyle(.borderless)
                 }
-                .padding()
+                .padding([.horizontal, .top])
+                .padding(.bottom, 8)
 
                 // List of items
                 if viewModel.isLoading {
@@ -41,19 +46,14 @@ struct ClipboardHistoryView: View {
                 } else if viewModel.items.isEmpty {
                     emptyStateView
                 } else {
-                    List {
-                        ForEach(viewModel.items) { item in
-                            ClipboardItemRowView(item: item)
-                                .onTapGesture {
-                                    viewModel.copyItem(item)
-                                }
-                                .contextMenu {
-                                    Button("复制") { viewModel.copyItem(item) }
-                                    Button("删除", role: .destructive) { viewModel.deleteItem(item) }
-                                }
+                    ScrollView {
+                        LazyVGrid(columns: gridColumns, spacing: 12) {
+                            ForEach(viewModel.items) { item in
+                                ClipboardItemCardView(item: item, viewModel: viewModel)
+                            }
                         }
+                        .padding()
                     }
-                    .listStyle(.inset(alternatesRowBackgrounds: true))
                 }
             }
         }
@@ -94,37 +94,42 @@ struct ClipboardHistoryView: View {
     }
 }
 
-struct ClipboardItemRowView: View {
+private struct ClipboardItemCardView: View {
     let item: ClipboardItem
-    
+    @ObservedObject var viewModel: ClipboardHistoryViewModel
+
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(item.content ?? "无内容")
-                    .lineLimit(2)
-                    .truncationMode(.tail)
-                
-                HStack(spacing: 8) {
-                    Text(item.type?.uppercased() ?? "N/A")
-                        .font(.system(size: 9, weight: .bold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.secondary.opacity(0.2))
-                        .cornerRadius(4)
-                    
-                    Text(item.createdAt ?? Date(), style: .relative)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            Spacer()
+        VStack(alignment: .leading, spacing: 8) {
+            Text(item.content ?? "无内容")
+                .font(.system(.body, design: .monospaced))
+                .foregroundColor(.primary)
+                .lineLimit(4)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, 4)
+        .frame(height: 80)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.05), radius: 1, x: 0, y: 1)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            viewModel.copyItem(item)
+        }
+        .contextMenu {
+            Button("复制") { viewModel.copyItem(item) }
+            Button("删除", role: .destructive) { viewModel.deleteItem(item) }
+        }
     }
 }
 
 #Preview {
     let context = PersistenceController.preview.container.viewContext
     let viewModel = ClipboardHistoryViewModel(context: context)
-    return ClipboardHistoryView(viewModel: viewModel)
+    return ClipboardHistoryView(viewModel: viewModel).frame(width: 800)
 }

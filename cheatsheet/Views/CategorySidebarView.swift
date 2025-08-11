@@ -32,7 +32,7 @@ struct CategorySidebarView: View {
             .background(.clear)
 
             // 分类列表
-            List(selection: $categoryViewModel.selectedCategory) {
+            List {
                 // 欢迎页选项
                 Button(action: {
                     mainContentState = .welcome
@@ -51,7 +51,6 @@ struct CategorySidebarView: View {
                     mainContentState = .clipboardHistory
                 }) {
                     HStack {
-                        Image(systemName: "doc.on.clipboard")
                         Text("剪贴板")
                             .foregroundColor(.primary)
                         Spacer()
@@ -65,11 +64,11 @@ struct CategorySidebarView: View {
                     CategoryRowView(
                         category: category,
                         categoryViewModel: categoryViewModel,
+                        mainContentState: $mainContentState,
                         dragState: dragState,
                         index: index,
                         isPinnedSection: true
                     ).id(category.id) // Ensure unique ID for rows
-                    .tag(category)
                 }
 
                 // 其他分类
@@ -77,11 +76,11 @@ struct CategorySidebarView: View {
                     CategoryRowView(
                         category: category,
                         categoryViewModel: categoryViewModel,
+                        mainContentState: $mainContentState,
                         dragState: dragState,
                         index: categoryViewModel.pinnedCategories.count + index,
                         isPinnedSection: false
                     ).id(category.id) // Ensure unique ID for rows
-                    .tag(category)
                 }
                 
                 if categoryViewModel.categories.isEmpty {
@@ -244,7 +243,7 @@ struct CategorySidebarView: View {
 struct CategoryRowView: View {
     let category: Category
     @ObservedObject var categoryViewModel: CategoryViewModel
-    // This binding is no longer needed here as selection is handled by List
+    @Binding var mainContentState: ContentView.MainContentState
     @ObservedObject var dragState: DragState
     let index: Int
     let isPinnedSection: Bool
@@ -294,6 +293,20 @@ struct CategoryRowView: View {
             }
         }
         .contentShape(Rectangle())
+        .listRowBackground(
+            // 显示选中状态
+            {
+                if case .category(let selectedCategory) = mainContentState, selectedCategory == category {
+                    return Color.accentColor.opacity(0.2)
+                } else {
+                    return Color.clear
+                }
+            }()
+        )
+        .onTapGesture {
+            // 直接设置状态，就像欢迎页和剪贴板一样
+            mainContentState = .category(category)
+        }
         .draggable(dragData: dragData, dragState: dragState)
         .droppable(
             dropData: dragData,
