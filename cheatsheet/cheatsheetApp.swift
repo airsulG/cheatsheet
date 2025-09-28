@@ -20,15 +20,20 @@ struct cheatsheetApp: App {
         let backgroundContext = persistenceController.container.newBackgroundContext()
         clipboardMonitor = ClipboardMonitor(context: backgroundContext, pasteboard: SystemPasteboard())
         clipboardMonitor.startMonitoring()
+
+        // 不再创建状态栏图标（顶部菜单栏图标已移除）
+
+        // 监听退出，停止监控（避免在逃逸闭包中捕获 self）
+        let monitor = clipboardMonitor
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
+            monitor.stopMonitoring()
+        }
     }
 
     var body: some Scene {
-        WindowGroup {
-            ContentView()
-                .environment(\.managedObjectContext, persistenceController.container.viewContext)
-                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
-                    clipboardMonitor.stopMonitoring()
-                }
+        // Agent App：不创建主窗口，保留一个空的设置入口
+        Settings {
+            EmptyView()
         }
     }
 }

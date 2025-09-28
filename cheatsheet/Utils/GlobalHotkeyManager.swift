@@ -8,6 +8,10 @@
 import Foundation
 import Carbon
 import AppKit
+// 引入菜单栏控制器以便快捷键打开/收起顶部面板
+// 注意：该引用需要配合在 App 入口处进行初始化配置
+// MenuBarController.shared.configure(with:) 在 cheatsheetApp 中调用
+ 
 
 class GlobalHotkeyManager {
 
@@ -71,13 +75,9 @@ class GlobalHotkeyManager {
         
         // 检查是否是我们注册的快捷键
         if hotKeyID.signature == "cht1".fourChar() && hotKeyID.id == 1 {
-            // 在主线程激活应用
+            // 在主线程切换底部横条（Shelf）
             DispatchQueue.main.async {
-                NSApp.activate(ignoringOtherApps: true)
-                // 如果有窗口，可以尝试让窗口成为 key window
-                if let window = NSApp.windows.first {
-                    window.makeKeyAndOrderFront(nil)
-                }
+                ShelfWindowController.shared.toggle()
             }
             return noErr
         }
