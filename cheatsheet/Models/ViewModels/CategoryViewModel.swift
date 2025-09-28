@@ -128,6 +128,17 @@ class CategoryViewModel: ObservableObject {
         
         saveContext()
     }
+
+    /// 强制移动分类（忽略固定/非固定边界限制），用于顶部标签重排
+    func forceMoveCategory(from sourceIndex: Int, to destinationIndex: Int) {
+        guard sourceIndex != destinationIndex,
+              sourceIndex < categories.count,
+              destinationIndex < categories.count else { return }
+
+        categories.move(fromOffsets: IndexSet(integer: sourceIndex), toOffset: destinationIndex)
+        updateCategoryOrders()
+        saveContext()
+    }
     
     private func updateCategoryOrders() {
         for (index, category) in categories.enumerated() {
