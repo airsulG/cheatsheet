@@ -15,12 +15,16 @@
         <attribute name="type" optional="NO" attributeType="String" defaultValueString="text"/>
         <attribute name="content" optional="YES" attributeType="String"/>
         <attribute name="data" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES"/>
+        <attribute name="sourceBundleId" optional="YES" attributeType="String"/>
+        <attribute name="sourceAppName" optional="YES" attributeType="String"/>
+        <attribute name="sourceAppIcon" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES"/>
     </entity>
     <entity name="Command" representedClassName="Command" syncable="YES" codeGenerationType="class">
         <attribute name="content" optional="NO" attributeType="String"/>
         <attribute name="createdAt" optional="NO" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="isFavorite" optional="NO" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="favoriteOrder" optional="YES" attributeType="Integer 32" usesScalarValueType="YES"/>
         <attribute name="name" optional="NO" attributeType="String"/>
         <attribute name="order" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
         <attribute name="updatedAt" optional="NO" attributeType="Date" usesScalarValueType="NO"/>

@@ -70,6 +70,11 @@ struct PersistenceController {
 
     init(inMemory: Bool = false) {
         container = NSPersistentContainer(name: "cheatsheet")
+        // 启用轻量迁移，便于模型添加字段
+        if let desc = container.persistentStoreDescriptions.first {
+            desc.setOption(true as NSNumber, forKey: NSMigratePersistentStoresAutomaticallyOption)
+            desc.setOption(true as NSNumber, forKey: NSInferMappingModelAutomaticallyOption)
+        }
         if inMemory {
             container.persistentStoreDescriptions.first!.url = URL(fileURLWithPath: "/dev/null")
         }
