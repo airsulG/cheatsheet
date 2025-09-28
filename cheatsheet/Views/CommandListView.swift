@@ -348,7 +348,7 @@ struct CommandItemView: View {
                 commandViewModel.copyCommand(command)
             }
 
-            Button(command.isFavorite ? "取消快速访问" : "快速访问") {
+            Button(command.isFavorite ? "从工具栏移除" : "添加到工具栏") {
                 command.toggleFavorite()
                 commandViewModel.saveContext()
             }
