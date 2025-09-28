@@ -53,5 +53,9 @@
 			</dict>
 		</dict>
 	</array>
+
+	<!-- 以代理应用运行：无 Dock、无 Cmd-Tab，仅菜单栏 -->
+	<key>LSUIElement</key>
+	<false/>
 </dict>
 </plist>
