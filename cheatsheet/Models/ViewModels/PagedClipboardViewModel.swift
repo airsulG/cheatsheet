@@ -1,76 +1,85 @@
 //
-//  ClipboardHistoryViewModel.swift
+//  PagedClipboardViewModel.swift
 //  cheatsheet
 //
-//  Created by 周麒 on 2025/8/11.
+//  Created by Codex on 2025/8/28.
 //
 
 import Foundation
 import CoreData
-import SwiftUI
 #if os(macOS)
 import AppKit
 #endif
 
-class ClipboardHistoryViewModel: ObservableObject {
+final class PagedClipboardViewModel: ObservableObject {
     private let viewContext: NSManagedObjectContext
-    
+
     @Published var items: [ClipboardItem] = []
-    @Published var isLoading = false
+    @Published var isLoading: Bool = false
+    @Published var hasMore: Bool = true
     @Published var errorMessage: String?
-    @Published var showCopyToast = false
+
+    var pageSize: Int = 30
+    private var offset: Int = 0
 
     init(context: NSManagedObjectContext) {
         self.viewContext = context
-        fetchItems()
-        
+
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(contextDidSave(_:)),
             name: .NSManagedObjectContextDidSave,
-            object: nil // Observe saves from any context
+            object: nil
         )
     }
-    
+
     @objc private func contextDidSave(_ notification: Notification) {
-        // We only care about saves from a background context that get merged to the main
-        guard let context = notification.object as? NSManagedObjectContext,
-              context != viewContext else {
-            return
-        }
-        
-        viewContext.perform {
-            self.viewContext.mergeChanges(fromContextDidSave: notification)
-            self.fetchItems() // Re-fetch to update the UI
-        }
+        // 新数据写入时，仅重置第一页，避免一次性加载全部
+        resetAndLoadFirstPage()
     }
-    
-    func fetchItems() {
+
+    func resetAndLoadFirstPage() {
+        items.removeAll()
+        offset = 0
+        hasMore = true
+        loadNextPage()
+    }
+
+    func ensureFirstPageLoaded() {
+        if items.isEmpty { resetAndLoadFirstPage() }
+    }
+
+    func loadNextPage() {
+        guard !isLoading, hasMore else { return }
         isLoading = true
+        errorMessage = nil
+
         let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
         request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.createdAt, ascending: false)]
-        
+        request.fetchOffset = offset
+        request.fetchLimit = pageSize
+
         do {
-            items = try viewContext.fetch(request)
-        } catch {
-            errorMessage = "Failed to fetch clipboard history: \(error.localizedDescription)"
-        }
-        isLoading = false
-    }
-    
-    func deleteItem(_ item: ClipboardItem) {
-        viewContext.perform {
-            self.viewContext.delete(item)
-            self.saveContext()
+            let page = try viewContext.fetch(request)
             DispatchQueue.main.async {
-                if let index = self.items.firstIndex(of: item) {
-                    self.items.remove(at: index)
-                }
+                self.items.append(contentsOf: page)
+                self.offset += page.count
+                self.hasMore = page.count == self.pageSize
+                self.isLoading = false
+            }
+        } catch {
+            DispatchQueue.main.async {
+                self.errorMessage = "加载剪贴板失败: \(error.localizedDescription)"
+                self.isLoading = false
+                self.hasMore = false
             }
         }
     }
-    
-    func copyItem(_ item: ClipboardItem) {
+
+    // MARK: - Operations
+
+    @discardableResult
+    func copyItem(_ item: ClipboardItem) -> Bool {
         #if os(macOS)
         let pb = NSPasteboard.general
         pb.clearContents()
@@ -98,21 +107,23 @@ class ClipboardHistoryViewModel: ObservableObject {
         default:
             ok = pb.setString(item.content ?? "", forType: .string)
         }
-        if ok {
-            showCopyToast = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.showCopyToast = false }
-        }
+        return ok
         #else
-        _ = item
+        return false
         #endif
     }
 
-    private func saveContext() {
-        do {
-            try viewContext.save()
-            errorMessage = nil
-        } catch {
-            errorMessage = "Save failed: \(error.localizedDescription)"
+    func deleteItem(_ item: ClipboardItem) {
+        viewContext.perform {
+            self.viewContext.delete(item)
+            do {
+                try self.viewContext.save()
+                DispatchQueue.main.async {
+                    self.items.removeAll { $0.objectID == item.objectID }
+                }
+            } catch {
+                DispatchQueue.main.async { self.errorMessage = "删除失败: \(error.localizedDescription)" }
+            }
         }
     }
 }

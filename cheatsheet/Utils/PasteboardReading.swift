@@ -11,6 +11,8 @@ import AppKit
 protocol PasteboardReading {
     var changeCount: Int { get }
     func string(forType type: NSPasteboard.PasteboardType) -> String?
+    func data(forType type: NSPasteboard.PasteboardType) -> Data?
+    var types: [NSPasteboard.PasteboardType] { get }
 }
 
 struct SystemPasteboard: PasteboardReading {
@@ -22,5 +24,13 @@ struct SystemPasteboard: PasteboardReading {
     
     func string(forType type: NSPasteboard.PasteboardType) -> String? {
         pasteboard.string(forType: type)
+    }
+
+    func data(forType type: NSPasteboard.PasteboardType) -> Data? {
+        pasteboard.data(forType: type)
+    }
+
+    var types: [NSPasteboard.PasteboardType] {
+        pasteboard.types ?? []
     }
 }
