@@ -388,13 +388,8 @@ private extension ShelfView {
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-            Capsule()
-                .fill(Color(NSColor.controlBackgroundColor))
-                .overlay(Capsule().stroke(Color(NSColor.separatorColor), lineWidth: 0.5))
-        )
+        .padding(.horizontal, 2)
+        // 去除徽章化的背景与冗余内边距，仅保留图标与文字
         .help("CheatHub")
     }
 }
