@@ -22,7 +22,7 @@ struct ReorderableHStack<Item, ID: Hashable, Content: View>: View {
     private let coordSpace = "reorder-hstack"
 
     var body: some View {
-        HStack(spacing: spacing) {
+        HStack(alignment: .top, spacing: spacing) {
             ForEach(items, id: id) { item in
                 let itemKey: AnyHashable = AnyHashable(item[keyPath: id])
                 content(item)

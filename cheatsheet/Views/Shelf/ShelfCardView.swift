@@ -15,6 +15,7 @@ struct ShelfCardView: View {
     let onDelete: (() -> Void)?
     let onToggleFavorite: (() -> Void)?
     let isFavorite: Bool?
+    let cardHeight: CGFloat?
 
     init(title: String,
          subtitle: String,
@@ -22,7 +23,8 @@ struct ShelfCardView: View {
          onEdit: (() -> Void)? = nil,
          onDelete: (() -> Void)? = nil,
          onToggleFavorite: (() -> Void)? = nil,
-         isFavorite: Bool? = nil) {
+         isFavorite: Bool? = nil,
+         cardHeight: CGFloat? = nil) {
         self.title = title
         self.subtitle = subtitle
         self.onTap = onTap
@@ -30,47 +32,40 @@ struct ShelfCardView: View {
         self.onDelete = onDelete
         self.onToggleFavorite = onToggleFavorite
         self.isFavorite = isFavorite
+        self.cardHeight = cardHeight
     }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            VStack(alignment: .leading, spacing: 4) {
-                // 标题始终左上角
+        CardContainer(containerHeight: cardHeight) {
+            // Header：标题 + 可选收藏按钮
+            HStack(spacing: 8) {
                 Text(title.isEmpty ? "未命名" : title)
                     .font(.headline)
                     .foregroundColor(.primary)
                     .lineLimit(1)
 
-                // 正文尽量多，边距更紧凑
+                Spacer()
+
+                if let onToggleFavorite = onToggleFavorite, let isFavorite = isFavorite {
+                    Button(action: { onToggleFavorite() }) {
+                        Image(systemName: isFavorite ? "bolt.fill" : "bolt")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(isFavorite ? .yellow : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        } content: {
+            VStack(alignment: .leading, spacing: 4) {
+                // 正文尽量多，边距更紧凑（容器已提供统一内边距）
                 Text(subtitle)
                     .font(.system(.body, design: .monospaced))
                     .foregroundColor(.secondary)
-                    .lineLimit(5)
+                    .lineLimit(nil)
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
         }
-        .frame(width: 220, height: 120, alignment: .topLeading)
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12).stroke(Color.black.opacity(0.08), lineWidth: 0.5)
-        )
-        .overlay(alignment: .topTrailing) {
-            if let onToggleFavorite = onToggleFavorite, let isFavorite = isFavorite {
-                Button(action: { onToggleFavorite() }) {
-                    Image(systemName: isFavorite ? "bolt.fill" : "bolt")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(isFavorite ? .yellow : .secondary)
-                        .padding(6)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 4)
-        .contentShape(Rectangle())
         .onTapGesture { onTap() }
         .contextMenu {
             Button("复制") { onTap() }
