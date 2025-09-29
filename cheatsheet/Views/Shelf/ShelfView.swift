@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
 
 struct ShelfView: View {
     @ObservedObject var viewModel: ShelfViewModel
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
 
     @State private var showingAddCommandSheet = false
     @State private var renamingCategory: Category? = nil
@@ -24,18 +25,29 @@ struct ShelfView: View {
     @StateObject private var dragState = ShelfDragState.shared
     @StateObject private var tabDragState = ShelfTabDragState.shared
     @State private var appeared = false
+    @Namespace private var glassNS
 
     var body: some View {
-        ZStack {
-            VisualEffectView(material: .underWindowBackground, blendingMode: .behindWindow)
-                .ignoresSafeArea()
+        // 方案 1：整片矩形玻璃由外层容器统一承担；根据辅助功能判断降级
+        let shouldReduceTransparency: Bool = {
+            let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+            let incContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+            return reduce || incContrast || (colorSchemeContrast == .increased)
+        }()
+
+        return ZStack {
+            // 背景采用液态玻璃（macOS 26+），老系统自动回退为磨砂玻璃
+            GlassBackground()
 
             VStack(spacing: 6) {
                 headerBar
                     .padding(.horizontal, 12)
                     .padding(.top, 8)
 
-                Divider().opacity(0.3)
+                // A2：弱化分隔线，采用低对比度描边
+                Rectangle()
+                    .fill(Color(NSColor.separatorColor).opacity(0.15))
+                    .frame(height: 0.5)
 
                 // 卡片区域（横向滚动）
                 GeometryReader { proxy in
@@ -47,167 +59,167 @@ struct ShelfView: View {
 
                     let available = max(cardMinHeight, proxy.size.height - paddingV)
                     let cardHeight = min(max(available - bottomGutter, cardMinHeight), cardMaxHeight)
+
                     ScrollView(.horizontal, showsIndicators: true) {
-                    topAligned {
-                    if isClipboardSelected {
-                        // 剪贴板（行容器顶对齐，且不拉升高度）
-                        LazyHStack(alignment: .top, spacing: cardSpacing) {
-                            ForEach(viewModel.pagedClipboardVM.items.filter { item in
-                                let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-                                guard !q.isEmpty else { return true }
-                                let type = item.type ?? ""
-                                let content = item.content ?? ""
-                                return type.localizedCaseInsensitiveContains(q) || content.localizedCaseInsensitiveContains(q)
-                            }, id: \.id) { item in
-                                ClipboardShelfCard(item: item, cardHeight: cardHeight) {
-                                    let success = viewModel.pagedClipboardVM.copyItem(item)
-                                    if success {
-                                        viewModel.showCopyToast = true
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { viewModel.showCopyToast = false }
-                                    }
-                                    // 复制后自动关闭横条窗口
-                                    ShelfWindowController.shared.hide()
-                                } onDelete: {
-                                    viewModel.pagedClipboardVM.deleteItem(item)
-                                }
-                                .onAppear {
-                                    if item.objectID == viewModel.pagedClipboardVM.items.last?.objectID {
-                                        viewModel.pagedClipboardVM.loadNextPage()
-                                    }
-                                }
-                            }
-                        }
-                    } else if isFavoritesSelected {
-                        // 收藏命令：搜索为空可重排，否则只读
-                        let fq = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if fq.isEmpty {
-                            ReorderableHStack(
-                                items: viewModel.favorites,
-                                id: \.id,
-                                spacing: cardSpacing,
-                                content: { cmd in
-                                    ShelfCardView(
-                                        title: cmd.name ?? "",
-                                        subtitle: adaptiveSubtitle(from: cmd.content ?? ""),
-                                        onTap: {
-                                            viewModel.commandVM.copyCommand(cmd)
-                                            if viewModel.commandVM.showCopyToast { viewModel.showToast() }
-                                            // 复制后自动关闭横条窗口
-                                            ShelfWindowController.shared.hide()
-                                        },
-                                        onEdit: {
-                                            EditorWindowController.shared.presentCommandEdit(command: cmd, commandViewModel: viewModel.commandVM)
-                                        },
-                                        onDelete: {
-                                            viewModel.commandVM.deleteCommand(cmd)
-                                            viewModel.fetchFavorites()
-                                        },
-                                        onToggleFavorite: {
-                                            viewModel.toggleFavorite(cmd)
-                                        },
-                                        isFavorite: cmd.isFavorite,
-                                        cardHeight: cardHeight
-                                    )
-                                },
-                                onMove: { from, to in
-                                    viewModel.moveFavorite(from: from, to: to)
-                                }
-                            )
-                        } else {
-                            LazyHStack(alignment: .top, spacing: cardSpacing) {
-                                ForEach(viewModel.favorites.filter { cmd in
-                                    return (cmd.name ?? "").localizedCaseInsensitiveContains(fq) ||
-                                           (cmd.content ?? "").localizedCaseInsensitiveContains(fq)
-                                }, id: \.id) { cmd in
-                                    ShelfCardView(
-                                        title: cmd.name ?? "",
-                                        subtitle: adaptiveSubtitle(from: cmd.content ?? ""),
-                                        onTap: {
-                                            viewModel.commandVM.copyCommand(cmd)
-                                            if viewModel.commandVM.showCopyToast { viewModel.showToast() }
-                                            // 复制后自动关闭横条窗口
-                                            ShelfWindowController.shared.hide()
-                                        },
-                                        onEdit: { EditorWindowController.shared.presentCommandEdit(command: cmd, commandViewModel: viewModel.commandVM) },
-                                        onDelete: { viewModel.commandVM.deleteCommand(cmd); viewModel.fetchFavorites() },
-                                        onToggleFavorite: { viewModel.toggleFavorite(cmd) },
-                                        isFavorite: cmd.isFavorite,
-                                        cardHeight: cardHeight
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        // 当前分类中的命令（DragGesture 重排，仅在搜索为空时）
-                        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if q.isEmpty {
-                            HStack(alignment: .top, spacing: cardSpacing) {
-                                ReorderableHStack(
-                                    items: viewModel.commandVM.commands,
-                                    id: \.id,
-                                    spacing: cardSpacing,
-                                    content: { cmd in
-                                        ShelfCardView(
-                                            title: cmd.name ?? "",
-                                            subtitle: adaptiveSubtitle(from: cmd.content ?? ""),
-                                            onTap: {
-                                                viewModel.commandVM.copyCommand(cmd)
-                                                if viewModel.commandVM.showCopyToast { viewModel.showToast() }
+                        topAligned {
+                            Group {
+                                if isClipboardSelected {
+                                    // 剪贴板（行容器顶对齐，且不拉升高度）
+                                    LazyHStack(alignment: .top, spacing: cardSpacing) {
+                                        ForEach(viewModel.pagedClipboardVM.items.filter { item in
+                                            let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                            guard !q.isEmpty else { return true }
+                                            let type = item.type ?? ""
+                                            let content = item.content ?? ""
+                                            return type.localizedCaseInsensitiveContains(q) || content.localizedCaseInsensitiveContains(q)
+                                        }, id: \.id) { item in
+                                            ClipboardShelfCard(item: item, cardHeight: cardHeight) {
+                                                let success = viewModel.pagedClipboardVM.copyItem(item)
+                                                if success {
+                                                    viewModel.showCopyToast = true
+                                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { viewModel.showCopyToast = false }
+                                                }
                                                 // 复制后自动关闭横条窗口
                                                 ShelfWindowController.shared.hide()
+                                            } onDelete: {
+                                                viewModel.pagedClipboardVM.deleteItem(item)
+                                            }
+                                            .onAppear {
+                                                if item.objectID == viewModel.pagedClipboardVM.items.last?.objectID {
+                                                    viewModel.pagedClipboardVM.loadNextPage()
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else if isFavoritesSelected {
+                                    // 收藏命令：搜索为空可重排，否则只读
+                                    let fq = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    if fq.isEmpty {
+                                        ReorderableHStack(
+                                            items: viewModel.favorites,
+                                            id: \.id,
+                                            spacing: cardSpacing,
+                                            content: { cmd in
+                                                ShelfCardView(
+                                                    title: cmd.name ?? "",
+                                                    subtitle: adaptiveSubtitle(from: cmd.content ?? ""),
+                                                    onTap: {
+                                                        viewModel.commandVM.copyCommand(cmd)
+                                                        if viewModel.commandVM.showCopyToast { viewModel.showToast() }
+                                                        // 复制后自动关闭横条窗口
+                                                        ShelfWindowController.shared.hide()
+                                                    },
+                                                    onEdit: {
+                                                        EditorWindowController.shared.presentCommandEdit(command: cmd, commandViewModel: viewModel.commandVM)
+                                                    },
+                                                    onDelete: {
+                                                        viewModel.commandVM.deleteCommand(cmd)
+                                                        viewModel.fetchFavorites()
+                                                    },
+                                                    onToggleFavorite: {
+                                                        viewModel.toggleFavorite(cmd)
+                                                    },
+                                                    isFavorite: cmd.isFavorite,
+                                                    cardHeight: cardHeight
+                                                )
                                             },
-                                            onEdit: {
-                                                EditorWindowController.shared.presentCommandEdit(command: cmd, commandViewModel: viewModel.commandVM)
-                                            },
-                                            onDelete: { viewModel.commandVM.deleteCommand(cmd) },
-                                            onToggleFavorite: { viewModel.toggleFavorite(cmd) },
-                                            isFavorite: cmd.isFavorite,
-                                            cardHeight: cardHeight
+                                            onMove: { from, to in
+                                                viewModel.moveFavorite(from: from, to: to)
+                                            }
                                         )
-                                    },
-                                    onMove: { from, to in
-                                        viewModel.commandVM.moveCommand(from: from, to: to)
+                                    } else {
+                                        LazyHStack(alignment: .top, spacing: cardSpacing) {
+                                            ForEach(viewModel.favorites.filter { cmd in
+                                                return (cmd.name ?? "").localizedCaseInsensitiveContains(fq) ||
+                                                       (cmd.content ?? "").localizedCaseInsensitiveContains(fq)
+                                            }, id: \.id) { cmd in
+                                                ShelfCardView(
+                                                    title: cmd.name ?? "",
+                                                    subtitle: adaptiveSubtitle(from: cmd.content ?? ""),
+                                                    onTap: {
+                                                        viewModel.commandVM.copyCommand(cmd)
+                                                        if viewModel.commandVM.showCopyToast { viewModel.showToast() }
+                                                        // 复制后自动关闭横条窗口
+                                                        ShelfWindowController.shared.hide()
+                                                    },
+                                                    onEdit: { EditorWindowController.shared.presentCommandEdit(command: cmd, commandViewModel: viewModel.commandVM) },
+                                                    onDelete: { viewModel.commandVM.deleteCommand(cmd); viewModel.fetchFavorites() },
+                                                    onToggleFavorite: { viewModel.toggleFavorite(cmd) },
+                                                    isFavorite: cmd.isFavorite,
+                                                    cardHeight: cardHeight
+                                                )
+                                            }
+                                        }
                                     }
-                                )
-                                // 新建命令卡片（标题/正文为空白）置于最右侧
-                                AddCommandCard(cardHeight: cardHeight) {
-                                    if let cat = viewModel.selectedCategory {
-                                        EditorWindowController.shared.presentNewCommand(category: cat, commandViewModel: viewModel.commandVM)
-                                    }
-                                }
-                            }
-                        } else {
-                            HStack(alignment: .top, spacing: cardSpacing) {
-                                LazyHStack(alignment: .top, spacing: cardSpacing) {
-                                    ForEach(viewModel.filteredCommands, id: \.id) { cmd in
-                                        ShelfCardView(
-                                            title: cmd.name ?? "",
-                                            subtitle: adaptiveSubtitle(from: cmd.content ?? ""),
-                                            onTap: {
-                                                viewModel.commandVM.copyCommand(cmd)
-                                                if viewModel.commandVM.showCopyToast { viewModel.showToast() }
-                                                // 复制后自动关闭横条窗口
-                                                ShelfWindowController.shared.hide()
-                                            },
-                                            onEdit: {
-                                                EditorWindowController.shared.presentCommandEdit(command: cmd, commandViewModel: viewModel.commandVM)
-                                            },
-                                            onDelete: { viewModel.commandVM.deleteCommand(cmd) },
-                                            onToggleFavorite: { viewModel.toggleFavorite(cmd) },
-                                            isFavorite: cmd.isFavorite,
-                                            cardHeight: cardHeight
-                                        )
-                                    }
-                                }
-                                // 新建命令卡片置于最右侧
-                                AddCommandCard(cardHeight: cardHeight) {
-                                    if let cat = viewModel.selectedCategory {
-                                        EditorWindowController.shared.presentNewCommand(category: cat, commandViewModel: viewModel.commandVM)
+                                } else {
+                                    // 当前分类中的命令（DragGesture 重排，仅在搜索为空时）
+                                    let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    if q.isEmpty {
+                                        HStack(alignment: .top, spacing: cardSpacing) {
+                                            ReorderableHStack(
+                                                items: viewModel.commandVM.commands,
+                                                id: \.id,
+                                                spacing: cardSpacing,
+                                                content: { cmd in
+                                                    ShelfCardView(
+                                                        title: cmd.name ?? "",
+                                                        subtitle: adaptiveSubtitle(from: cmd.content ?? ""),
+                                                        onTap: {
+                                                            viewModel.commandVM.copyCommand(cmd)
+                                                            if viewModel.commandVM.showCopyToast { viewModel.showToast() }
+                                                            // 复制后自动关闭横条窗口
+                                                            ShelfWindowController.shared.hide()
+                                                        },
+                                                        onEdit: {
+                                                            EditorWindowController.shared.presentCommandEdit(command: cmd, commandViewModel: viewModel.commandVM)
+                                                        },
+                                                        onDelete: { viewModel.commandVM.deleteCommand(cmd) },
+                                                        onToggleFavorite: { viewModel.toggleFavorite(cmd) },
+                                                        isFavorite: cmd.isFavorite,
+                                                        cardHeight: cardHeight
+                                                    )
+                                                },
+                                                onMove: { from, to in
+                                                    viewModel.commandVM.moveCommand(from: from, to: to)
+                                                }
+                                            )
+                                            // 新建命令卡片（标题/正文为空白）置于最右侧
+                                            AddCommandCard(cardHeight: cardHeight) {
+                                                if let cat = viewModel.selectedCategory {
+                                                    EditorWindowController.shared.presentNewCommand(category: cat, commandViewModel: viewModel.commandVM)
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        HStack(alignment: .top, spacing: cardSpacing) {
+                                            LazyHStack(alignment: .top, spacing: cardSpacing) {
+                                                ForEach(viewModel.filteredCommands, id: \.id) { cmd in
+                                                    ShelfCardView(
+                                                        title: cmd.name ?? "",
+                                                        subtitle: adaptiveSubtitle(from: cmd.content ?? ""),
+                                                        onTap: {
+                                                            viewModel.commandVM.copyCommand(cmd)
+                                                            if viewModel.commandVM.showCopyToast { viewModel.showToast() }
+                                                            // 复制后自动关闭横条窗口
+                                                            ShelfWindowController.shared.hide()
+                                                        },
+                                                        onEdit: {
+                                                            EditorWindowController.shared.presentCommandEdit(command: cmd, commandViewModel: viewModel.commandVM)
+                                                        },
+                                                        onDelete: { viewModel.commandVM.deleteCommand(cmd) },
+                                                        onToggleFavorite: { viewModel.toggleFavorite(cmd) },
+                                                        isFavorite: cmd.isFavorite,
+                                                        cardHeight: cardHeight
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+                    // 方案 1：由外层整片矩形玻璃统一承载，内部不再局部玻璃
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 4)
@@ -217,6 +229,8 @@ struct ShelfView: View {
                 .animation(.interpolatingSpring(stiffness: 220, damping: 22), value: appeared)
             }
         }
+        // 方案 1：把整条横栏（ZStack）矩形玻璃化（macOS 26+ 才启用）
+        .glassEffectRectCompat(shouldReduceTransparency: shouldReduceTransparency)
         .frame(minHeight: 300) // 默认高度 300
         .overlay(
             // 顶部柔和阴影，增强与桌面边界的层次感
@@ -226,13 +240,11 @@ struct ShelfView: View {
                 Spacer()
             }
         )
-        .onChange(of: searchText) { newValue in
+        .onChange(of: searchText) { _, newValue in
             viewModel.searchText = newValue
         }
-        .onChange(of: isClipboardSelected) { selected in
-            if selected {
-                viewModel.pagedClipboardVM.ensureFirstPageLoaded()
-            }
+        .onChange(of: isClipboardSelected) { _, selected in
+            if selected { viewModel.pagedClipboardVM.ensureFirstPageLoaded() }
         }
         .onAppear { appeared = true }
         .onDisappear { appeared = false }
@@ -245,7 +257,7 @@ struct ShelfView: View {
                 }
             }
         )
-        // 新建命令入口改为左侧“新建命令卡片”（不再使用底部条）
+        // 新建命令入口改为右侧“新建命令卡片”（不再使用底部条）
         .alert("重命名分类", isPresented: Binding(get: { renamingCategory != nil }, set: { if !$0 { renamingCategory = nil } })) {
             TextField("新的分类名称", text: $newCategoryName)
             Button("取消", role: .cancel) { renamingCategory = nil }
@@ -257,7 +269,6 @@ struct ShelfView: View {
             }
         } message: {
             Text("请输入新的分类名称")
-        }
         }
 
         // 结束 body 视图
@@ -495,15 +506,7 @@ private struct ClipboardShelfCard: View {
                     .interpolation(.high)
                     .antialiased(true)
                     .frame(width: 48, height: 48)
-                    .padding(8)    // 放大后相应增大边距，避免贴边
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color(NSColor.textBackgroundColor))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color(NSColor.separatorColor).opacity(0.4), lineWidth: 0.5)
-                    )
+                    .padding(8)    // 保留边距，避免贴边，仅显示图标
             }
         }
     }
