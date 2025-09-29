@@ -9,6 +9,7 @@ import Foundation
 import CoreData
 import SwiftUI
 
+@MainActor
 final class ShelfViewModel: ObservableObject {
     let viewContext: NSManagedObjectContext
 
@@ -41,17 +42,14 @@ final class ShelfViewModel: ObservableObject {
     }
 
     @objc private func contextDidSave(_ noti: Notification) {
-        // 合并更改并刷新
-        viewContext.perform { [weak self] in
-            guard let self = self else { return }
-            self.viewContext.mergeChanges(fromContextDidSave: noti)
-            self.categoryVM.fetchCategories()
-            // 剪贴板：仅刷新第一页，避免加载过多
-            self.pagedClipboardVM.resetAndLoadFirstPage()
-            self.fetchFavorites()
-            if let cat = self.selectedCategory {
-                self.commandVM.fetchCommands(for: cat)
-            }
+        // 在主 Actor 上合并更改并刷新（viewContext 为 mainQueueConcurrencyType）
+        viewContext.mergeChanges(fromContextDidSave: noti)
+        categoryVM.fetchCategories()
+        // 剪贴板：仅刷新第一页，避免加载过多
+        pagedClipboardVM.resetAndLoadFirstPage()
+        fetchFavorites()
+        if let cat = selectedCategory {
+            commandVM.fetchCommands(for: cat)
         }
     }
 
@@ -114,6 +112,11 @@ final class ShelfViewModel: ObservableObject {
             command.setValue(Int32(next), forKey: "favoriteOrder")
             saveContext()
             fetchFavorites()
+        }
+
+        // 刷新当前分类命令列表，使“收藏置左”立即生效
+        if let cat = selectedCategory {
+            commandVM.fetchCommands(for: cat)
         }
     }
 
