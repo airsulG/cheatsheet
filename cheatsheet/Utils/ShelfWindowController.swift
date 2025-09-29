@@ -10,6 +10,7 @@ import AppKit
 import SwiftUI
 import QuartzCore
 
+@MainActor
 final class ShelfWindowController {
     static let shared = ShelfWindowController()
 
@@ -57,10 +58,15 @@ final class ShelfWindowController {
     func hide() {
         guard let panel = panel, let screen = Self.activeScreen() else { panel?.orderOut(nil); return }
         let f = screen.frame
+
+        // 无回弹的单段隐藏动画：一次性收至最终高度
+        let finalH: CGFloat = 0.1
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.14
+            ctx.duration = 0.18
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            let final = NSRect(x: f.minX, y: f.minY, width: f.width, height: 0.1)
+            // 如需更“干净”的加速，可改用自定义控制点：
+            // ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0.0, 1.0, 1.0)
+            let final = NSRect(x: f.minX, y: f.minY, width: f.width, height: finalH)
             panel.animator().setFrame(final, display: true)
         } completionHandler: {
             panel.orderOut(nil)
