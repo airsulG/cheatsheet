@@ -65,6 +65,7 @@ struct ContentView: View {
                         .background(.clear)
                 case .category(let selectedCategory):
                     CommandListView(category: selectedCategory, commandViewModel: commandViewModel)
+                        .id(selectedCategory.objectID) // 随分类切换强制重建，隔离内部状态
                         .background(.clear)
                 }
             }
