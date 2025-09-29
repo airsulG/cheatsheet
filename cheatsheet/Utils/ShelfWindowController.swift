@@ -34,24 +34,15 @@ final class ShelfWindowController {
         let f = screen.frame
         let targetHeight: CGFloat = 300
         let startFrame = NSRect(x: f.minX, y: f.minY, width: f.width, height: 0.1)
-        let overshoot: CGFloat = 18
         panel.setFrame(startFrame, display: false)
         panel.orderFrontRegardless()
 
-        // 第一段：弹出至稍大（overshoot）
+        // 单段到位：无 overshoot，无回弹
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.16
+            ctx.duration = 0.18
             ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            let midFrame = NSRect(x: f.minX, y: f.minY, width: f.width, height: targetHeight + overshoot)
-            panel.animator().setFrame(midFrame, display: true)
-        } completionHandler: {
-            // 第二段：回弹至目标高度
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.12
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
-                let finalFrame = NSRect(x: f.minX, y: f.minY, width: f.width, height: targetHeight)
-                panel.animator().setFrame(finalFrame, display: true)
-            }
+            let finalFrame = NSRect(x: f.minX, y: f.minY, width: f.width, height: targetHeight)
+            panel.animator().setFrame(finalFrame, display: true)
         }
     }
 
