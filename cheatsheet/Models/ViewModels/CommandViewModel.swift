@@ -9,6 +9,7 @@ import Foundation
 import CoreData
 import SwiftUI
 
+@MainActor
 class CommandViewModel: ObservableObject {
     
     private let viewContext: NSManagedObjectContext
@@ -21,6 +22,8 @@ class CommandViewModel: ObservableObject {
     @Published var showCopyToast = false
     
     private var currentCategory: Category?
+    // 防乱序令牌：仅允许最新一次拉取写入结果
+    private var fetchGeneration: Int = 0
     
     init(context: NSManagedObjectContext) {
         self.viewContext = context
@@ -29,15 +32,18 @@ class CommandViewModel: ObservableObject {
     // MARK: - Fetch Operations
     
     func fetchCommands(for category: Category?) {
+        // 生成本次请求的令牌
+        fetchGeneration += 1
+        let gen = fetchGeneration
+
+        // 更新当前分类与加载状态
         currentCategory = category
+        isLoading = true
+        errorMessage = nil
 
-        DispatchQueue.main.async {
-            self.isLoading = true
-            self.errorMessage = nil
-        }
-
+        // 空分类：清空结果，仅当仍为最新请求时提交
         guard let category = category else {
-            DispatchQueue.main.async {
+            if gen == fetchGeneration {
                 self.commands = []
                 self.isLoading = false
             }
@@ -50,12 +56,18 @@ class CommandViewModel: ObservableObject {
 
         do {
             let fetchedCommands = try viewContext.fetch(request)
-            DispatchQueue.main.async {
-                self.commands = fetchedCommands
+            // 仅当此次请求仍为最新时写入结果
+            if gen == fetchGeneration {
+                // 收藏置左：先按 isFavorite 降序，其次按 order 升序，保持稳定顺序
+                let favFirst = fetchedCommands.sorted { lhs, rhs in
+                    if lhs.isFavorite != rhs.isFavorite { return lhs.isFavorite && !rhs.isFavorite }
+                    return lhs.order < rhs.order
+                }
+                self.commands = favFirst
                 self.isLoading = false
             }
         } catch {
-            DispatchQueue.main.async {
+            if gen == fetchGeneration {
                 self.errorMessage = "获取命令失败: \(error.localizedDescription)"
                 self.isLoading = false
             }
