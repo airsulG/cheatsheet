@@ -16,6 +16,8 @@ struct ShelfCardView: View {
     let onToggleFavorite: (() -> Void)?
     let isFavorite: Bool?
     let cardHeight: CGFloat?
+    let availableCategories: [Category]?  // 新增：可用分类列表
+    let onMoveTo: ((Category) -> Void)?   // 新增：移动到分类回调
 
     init(title: String,
          subtitle: String,
@@ -24,7 +26,9 @@ struct ShelfCardView: View {
          onDelete: (() -> Void)? = nil,
          onToggleFavorite: (() -> Void)? = nil,
          isFavorite: Bool? = nil,
-         cardHeight: CGFloat? = nil) {
+         cardHeight: CGFloat? = nil,
+         availableCategories: [Category]? = nil,  // 新增可选参数
+         onMoveTo: ((Category) -> Void)? = nil) { // 新增可选参数
         self.title = title
         self.subtitle = subtitle
         self.onTap = onTap
@@ -33,6 +37,8 @@ struct ShelfCardView: View {
         self.onToggleFavorite = onToggleFavorite
         self.isFavorite = isFavorite
         self.cardHeight = cardHeight
+        self.availableCategories = availableCategories
+        self.onMoveTo = onMoveTo
     }
 
     var body: some View {
@@ -75,6 +81,18 @@ struct ShelfCardView: View {
             if let onToggleFavorite = onToggleFavorite {
                 Button("切换收藏") { onToggleFavorite() }
             }
+            
+            // 新增：移动到分类菜单
+            if let categories = availableCategories, let onMoveTo = onMoveTo, !categories.isEmpty {
+                Menu("移动到...") {
+                    ForEach(categories, id: \.id) { category in
+                        Button(category.name ?? "未命名分类") {
+                            onMoveTo(category)
+                        }
+                    }
+                }
+            }
+            
             if let onDelete = onDelete {
                 Divider()
                 Button("删除", role: .destructive) { onDelete() }

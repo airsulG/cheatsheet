@@ -40,6 +40,8 @@ struct TagStripView: View {
     let isSelected: (TagItem) -> Bool
     let onTap: (TagItem) -> Void
     let onMoveCategory: (_ from: Int, _ to: Int) -> Void
+    let onRenameCategory: ((Category) -> Void)?  // 新增：重命名回调
+    let onDeleteCategory: ((Category) -> Void)?  // 新增：删除回调
 
     @State private var draggingKey: AnyHashable? = nil
     @State private var dragTranslation: CGFloat = 0
@@ -56,7 +58,10 @@ struct TagStripView: View {
                         title: item.title,
                         isSelected: isSelected(item),
                         isDraggable: item.isDraggable,
-                        onTap: { onTap(item) }
+                        onTap: { onTap(item) },
+                        contextMenuBuilder: item.isDraggable ? {  // 只有分类标签才有菜单
+                            categoryContextMenu(for: item)
+                        } : nil
                     )
                     .background(GeometryReader { geo in
                         Color.clear.preference(key: FramesPrefKey.self, value: [item.id: geo.frame(in: .named(coordSpace))])
@@ -109,6 +114,27 @@ struct TagStripView: View {
                 onMoveCategory(fromIndex, targetIndex)
             }
         }
+    }
+    
+    // 构建分类标签的右键菜单
+    @ViewBuilder
+    private func categoryContextMenu(for item: TagItem) -> AnyView {
+        if case .category(let category) = item {
+            return AnyView(
+                Group {
+                    Button("重命名") {
+                        onRenameCategory?(category)
+                    }
+                    
+                    Divider()
+                    
+                    Button("删除", role: .destructive) {
+                        onDeleteCategory?(category)
+                    }
+                }
+            )
+        }
+        return AnyView(EmptyView())
     }
 }
 

@@ -44,9 +44,22 @@ final class ShelfViewModel: ObservableObject {
     @objc private func contextDidSave(_ noti: Notification) {
         // 在主 Actor 上合并更改并刷新（viewContext 为 mainQueueConcurrencyType）
         viewContext.mergeChanges(fromContextDidSave: noti)
+        
+        // 🟢 优化3：智能刷新 - 检查变更的对象类型
+        let insertedObjects = noti.userInfo?[NSInsertedObjectsKey] as? Set<NSManagedObject> ?? []
+        let updatedObjects = noti.userInfo?[NSUpdatedObjectsKey] as? Set<NSManagedObject> ?? []
+        let deletedObjects = noti.userInfo?[NSDeletedObjectsKey] as? Set<NSManagedObject> ?? []
+        
+        let allObjects = insertedObjects.union(updatedObjects).union(deletedObjects)
+        
+        // 只在剪贴板数据变更时刷新剪贴板列表
+        let hasClipboardChanges = allObjects.contains { $0 is ClipboardItem }
+        if hasClipboardChanges {
+            pagedClipboardVM.resetAndLoadFirstPage()
+        }
+        
+        // 分类和收藏正常刷新
         categoryVM.fetchCategories()
-        // 剪贴板：仅刷新第一页，避免加载过多
-        pagedClipboardVM.resetAndLoadFirstPage()
         fetchFavorites()
         if let cat = selectedCategory {
             commandVM.fetchCommands(for: cat)

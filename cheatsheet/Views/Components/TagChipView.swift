@@ -12,15 +12,18 @@ struct TagChipView: View {
     let isSelected: Bool
     let isDraggable: Bool
     let onTap: () -> Void
+    let contextMenuBuilder: (() -> AnyView)?  // 新增：右键菜单构建器
 
     init(title: String,
          isSelected: Bool,
          isDraggable: Bool = false,
-         onTap: @escaping () -> Void) {
+         onTap: @escaping () -> Void,
+         contextMenuBuilder: (() -> AnyView)? = nil) {  // 新增可选参数
         self.title = title
         self.isSelected = isSelected
         self.isDraggable = isDraggable
         self.onTap = onTap
+        self.contextMenuBuilder = contextMenuBuilder
     }
 
     var body: some View {
@@ -33,7 +36,24 @@ struct TagChipView: View {
             .overlay(Capsule().stroke(Color(NSColor.separatorColor), lineWidth: isSelected ? 0 : 1))
             .contentShape(Rectangle())
             .onTapGesture { onTap() }
+            .if(contextMenuBuilder != nil) { view in  // 条件添加 contextMenu
+                view.contextMenu {
+                    contextMenuBuilder?() ?? AnyView(EmptyView())
+                }
+            }
             .help(isDraggable ? "可拖拽以排序" : "")
+    }
+}
+
+// 辅助扩展：条件修饰符
+extension View {
+    @ViewBuilder
+    func `if`<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
+        }
     }
 }
 

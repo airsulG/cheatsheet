@@ -17,9 +17,13 @@ struct ShelfView: View {
     @State private var renamingCategory: Category? = nil
     @State private var newCategoryName: String = ""
     @State private var searchText: String = ""
-    @State private var isClipboardSelected: Bool = false // 将剪贴板作为一个“标签”
+    @State private var isClipboardSelected: Bool = false // 将剪贴板作为一个"标签"
     @State private var isFavoritesSelected: Bool = false  // 收藏标签
     @State private var isSearching: Bool = false
+    @State private var showingAddCategoryAlert = false  // 新增：新建分类对话框
+    @State private var newAddCategoryName: String = ""  // 新增：新建分类名称
+    @State private var showingDeleteCategoryAlert = false  // 新增：删除分类确认
+    @State private var deletingCategory: Category? = nil   // 新增：待删除的分类
 
     private let cardSpacing: CGFloat = 12
     @StateObject private var dragState = ShelfDragState.shared
@@ -120,7 +124,12 @@ struct ShelfView: View {
                                                         viewModel.toggleFavorite(cmd)
                                                     },
                                                     isFavorite: cmd.isFavorite,
-                                                    cardHeight: cardHeight
+                                                    cardHeight: cardHeight,
+                                                    availableCategories: viewModel.categoryVM.categories,  // 新增
+                                                    onMoveTo: { category in  // 新增
+                                                        viewModel.commandVM.moveCommand(cmd, to: category)
+                                                        viewModel.fetchFavorites()
+                                                    }
                                                 )
                                             },
                                             onMove: { from, to in
@@ -146,7 +155,12 @@ struct ShelfView: View {
                                                     onDelete: { viewModel.commandVM.deleteCommand(cmd); viewModel.fetchFavorites() },
                                                     onToggleFavorite: { viewModel.toggleFavorite(cmd) },
                                                     isFavorite: cmd.isFavorite,
-                                                    cardHeight: cardHeight
+                                                    cardHeight: cardHeight,
+                                                    availableCategories: viewModel.categoryVM.categories,  // 新增
+                                                    onMoveTo: { category in  // 新增
+                                                        viewModel.commandVM.moveCommand(cmd, to: category)
+                                                        viewModel.fetchFavorites()
+                                                    }
                                                 )
                                             }
                                         }
@@ -176,7 +190,11 @@ struct ShelfView: View {
                                                         onDelete: { viewModel.commandVM.deleteCommand(cmd) },
                                                         onToggleFavorite: { viewModel.toggleFavorite(cmd) },
                                                         isFavorite: cmd.isFavorite,
-                                                        cardHeight: cardHeight
+                                                        cardHeight: cardHeight,
+                                                        availableCategories: viewModel.categoryVM.categories.filter { $0.objectID != viewModel.selectedCategory?.objectID },  // 新增：排除当前分类
+                                                        onMoveTo: { category in  // 新增
+                                                            viewModel.commandVM.moveCommand(cmd, to: category)
+                                                        }
                                                     )
                                                 },
                                                 onMove: { from, to in
@@ -209,7 +227,11 @@ struct ShelfView: View {
                                                         onDelete: { viewModel.commandVM.deleteCommand(cmd) },
                                                         onToggleFavorite: { viewModel.toggleFavorite(cmd) },
                                                         isFavorite: cmd.isFavorite,
-                                                        cardHeight: cardHeight
+                                                        cardHeight: cardHeight,
+                                                        availableCategories: viewModel.categoryVM.categories.filter { $0.objectID != viewModel.selectedCategory?.objectID },  // 新增：排除当前分类
+                                                        onMoveTo: { category in  // 新增
+                                                            viewModel.commandVM.moveCommand(cmd, to: category)
+                                                        }
                                                     )
                                                 }
                                             }
@@ -257,7 +279,7 @@ struct ShelfView: View {
                 }
             }
         )
-        // 新建命令入口改为右侧“新建命令卡片”（不再使用底部条）
+        // 新建命令入口改为右侧"新建命令卡片"（不再使用底部条）
         .alert("重命名分类", isPresented: Binding(get: { renamingCategory != nil }, set: { if !$0 { renamingCategory = nil } })) {
             TextField("新的分类名称", text: $newCategoryName)
             Button("取消", role: .cancel) { renamingCategory = nil }
@@ -269,6 +291,45 @@ struct ShelfView: View {
             }
         } message: {
             Text("请输入新的分类名称")
+        }
+        .alert("新建分类", isPresented: $showingAddCategoryAlert) {
+            TextField("分类名称", text: $newAddCategoryName)
+            Button("取消", role: .cancel) { }
+            Button("创建") {
+                let name = newAddCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !name.isEmpty {
+                    viewModel.categoryVM.createCategory(name: name)
+                    viewModel.categoryVM.fetchCategories()
+                    if let created = viewModel.categoryVM.categories.first(where: { $0.name == name }) {
+                        isClipboardSelected = false
+                        isFavoritesSelected = false
+                        viewModel.selectCategory(created)
+                    }
+                }
+            }
+        } message: {
+            Text("请输入分类名称")
+        }
+        .alert("删除分类", isPresented: $showingDeleteCategoryAlert) {
+            Button("取消", role: .cancel) {
+                deletingCategory = nil
+            }
+            Button("删除", role: .destructive) {
+                if let cat = deletingCategory {
+                    viewModel.categoryVM.deleteCategory(cat)
+                    viewModel.categoryVM.fetchCategories()
+                    // 如果删除的是当前选中的分类，切换到收藏
+                    if viewModel.selectedCategory?.objectID == cat.objectID {
+                        isFavoritesSelected = true
+                        isClipboardSelected = false
+                        viewModel.clearSelection()
+                        viewModel.fetchFavorites()
+                    }
+                    deletingCategory = nil
+                }
+            }
+        } message: {
+            Text("确定要删除分类 \"\(deletingCategory?.name ?? "")\" 吗？\n\n此操作将同时删除该分类下的所有命令，且无法撤销。")
         }
 
         // 结束 body 视图
@@ -308,19 +369,22 @@ struct ShelfView: View {
                     withAnimation(.interpolatingSpring(stiffness: 300, damping: 25)) {
                         viewModel.categoryVM.forceMoveCategory(from: from, to: to)
                     }
+                },
+                onRenameCategory: { category in  // 新增：重命名回调
+                    renamingCategory = category
+                    newCategoryName = category.name ?? ""
+                },
+                onDeleteCategory: { category in  // 新增：删除回调
+                    showingDeleteCategoryAlert = true
+                    deletingCategory = category
                 }
             )
             .animation(.interpolatingSpring(stiffness: 300, damping: 25), value: viewModel.categoryVM.categories)
 
             // 新建分类按钮（与标签条保持同一视觉层级）
             Button {
-                let name = "新建分类"
-                viewModel.categoryVM.createCategory(name: name)
-                viewModel.categoryVM.fetchCategories()
-                if let created = viewModel.categoryVM.categories.first(where: { $0.name == name }) {
-                    isClipboardSelected = false
-                    viewModel.selectCategory(created)
-                }
+                showingAddCategoryAlert = true
+                newAddCategoryName = ""  // 清空输入
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 12, weight: .bold))
@@ -365,6 +429,20 @@ struct ShelfView: View {
                     }
                     .buttonStyle(.plain)
                     .help("备份与恢复")
+
+                    // 剪贴板设置按钮（仅在选中剪贴板时显示）
+                    if isClipboardSelected {
+                        Button {
+                            ClipboardSettingsWindowController.shared.present(viewModel: viewModel.pagedClipboardVM)
+                        } label: {
+                            Image(systemName: "gearshape")
+                                .font(.system(size: 14, weight: .regular))
+                                .padding(8)
+                                .background(Circle().fill(Color(NSColor.controlBackgroundColor)))
+                        }
+                        .buttonStyle(.plain)
+                        .help("剪贴板设置")
+                    }
 
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) { isSearching = true }
@@ -443,6 +521,9 @@ private struct ClipboardShelfCard: View {
     let onCopy: () -> Void
     let onDelete: () -> Void
 
+    // 🟢 优化4：虚拟化滚动 - 延迟加载大数据
+    @State private var isDataLoaded = false
+
     var body: some View {
         CardContainer(containerHeight: cardHeight) {
             // Header：类型胶囊 + 来源应用名（如有）
@@ -459,42 +540,48 @@ private struct ClipboardShelfCard: View {
         } content: {
             ZStack(alignment: .bottomTrailing) {
                 // 内容层
-                switch item.type ?? "text" {
-                case "image":
-                    if let data = item.data, let img = NSImage(data: data) {
-                        Image(nsImage: img)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .clipped()
-                    } else {
-                        placeholder("<image>")
-                    }
-                case "file":
-                    HStack(alignment: .center, spacing: 10) {
-                        if let data = item.data, let icon = NSImage(data: data) {
-                            Image(nsImage: icon)
+                if isDataLoaded {
+                    // 🟢 只有可见时才渲染包含大数据的内容
+                    switch item.type ?? "text" {
+                    case "image":
+                        if let data = item.data, let img = NSImage(data: data) {
+                            Image(nsImage: img)
                                 .resizable()
-                                .frame(width: 40, height: 40)
+                                .scaledToFit()
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .clipped()
+                        } else {
+                            placeholder("<image>")
                         }
-                        Text(fileName(from: item.content))
-                            .font(.system(size: 13, weight: .medium))
-                            .lineLimit(2)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    case "file":
+                        HStack(alignment: .center, spacing: 10) {
+                            if let data = item.data, let icon = NSImage(data: data) {
+                                Image(nsImage: icon)
+                                    .resizable()
+                                    .frame(width: 40, height: 40)
+                            }
+                            Text(fileName(from: item.content))
+                                .font(.system(size: 13, weight: .medium))
+                                .lineLimit(2)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    case "html":
+                        textPreview(item.content ?? "<html>")
+                    case "rtf":
+                        textPreview(item.content ?? "<rtf>")
+                    case "url":
+                        textPreview(item.content ?? "")
+                    default:
+                        textPreview(item.content ?? "")
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                case "html":
-                    textPreview(item.content ?? "<html>")
-                case "rtf":
-                    textPreview(item.content ?? "<rtf>")
-                case "url":
-                    textPreview(item.content ?? "")
-                default:
+
+                    // 右下角来源图标（如有）
+                    appIconView
+                } else {
+                    // 🟢 未加载时显示占位内容（仅文本预览）
                     textPreview(item.content ?? "")
                 }
-
-                // 右下角来源图标（如有）
-                appIconView
             }
         }
         .contextMenu {
@@ -502,6 +589,18 @@ private struct ClipboardShelfCard: View {
             Button("删除", role: .destructive) { onDelete() }
         }
         .onTapGesture { onCopy() }
+        .onAppear {
+            // 🟢 优化4：卡片出现在视野时才加载大数据
+            if !isDataLoaded {
+                // 延迟一点加载，避免滚动时卡顿
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    isDataLoaded = true
+                    // 触发 CoreData fault 加载 data 和 sourceAppIcon
+                    _ = item.data
+                    _ = item.sourceAppIcon
+                }
+            }
+        }
     }
 
     private var appIconView: some View {

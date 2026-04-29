@@ -129,6 +129,29 @@ class CommandViewModel: ObservableObject {
         }
     }
     
+    // MARK: - Move Command to Another Category
+    
+    /// 将命令移动到另一个分类
+    func moveCommand(_ command: Command, to targetCategory: Category) {
+        // 保存原分类，用于重新排序
+        let sourceCategory = command.category
+        
+        // 移动命令到目标分类
+        command.category = targetCategory
+        command.order = Int32(targetCategory.commandCount)
+        command.updateTimestamp()
+        
+        // 重新排序原分类的命令
+        if let sourceCategory = sourceCategory {
+            sourceCategory.reorderCommands()
+        }
+        
+        saveContext()
+        
+        // 刷新当前显示的分类
+        fetchCommands(for: currentCategory)
+    }
+    
     // MARK: - Clipboard Operations
     
     func copyCommand(_ command: Command) {
