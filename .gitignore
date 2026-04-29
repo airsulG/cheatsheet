@@ -8,3 +8,8 @@ AGENT.md
 
 # Ignore PRD temporary documents (product requirements drafts)
 PRD/**
+
+# Ignore local agent and project context files
+.claude/
+.project/README.md
+.project/context/
