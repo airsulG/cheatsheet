@@ -1,11 +1,11 @@
 # 01 收藏和分组备份导入
 
 ## 0. 当前状态
-- 当前阶段：第一版编码完成；已修复备份窗口不应顶起底部横条的问题，等待真实界面验收。
+- 当前阶段：第一版编码完成；已修复备份窗口和剪贴板设置窗口不应顶起底部横条的问题，等待真实界面验收。
 - 当前分支：`main`。
 - 当前是否允许自动执行：本轮已按用户“开始自循环编码”执行；后续清空式导入、覆盖旧备份、发布构建仍需用户确认。
 - 当前阻塞：当前 Xcode scheme 没有配置测试动作，`xcodebuild test` 无法执行测试文件。
-- 下一步：用户在应用里打开“备份与恢复”，确认窗口居中显示且底部横条不移动；再选择文件夹执行一次导出和导入试用。
+- 下一步：用户在应用里打开“备份与恢复”和“剪贴板设置”，确认两个窗口都居中显示且底部横条不移动；再选择文件夹执行一次导出和导入试用。
 
 ## 1. 目标和需求
 - 用户真正想解决的问题：换电脑时，如果忘记迁移软件本地数据库，自己整理的分组、收藏和创建的剪贴内容会丢失，恢复成本很高。
@@ -229,6 +229,7 @@
 - [x] 运行构建和测试：构建通过；测试命令因 scheme 未配置测试动作而无法执行。
 - [x] 更新执行记录和最终验证结果。
 - [x] 修复备份设置窗口展示方式：从 SwiftUI sheet 改为独立居中 NSWindow。
+- [x] 修复剪贴板设置窗口展示方式：从 SwiftUI sheet 改为独立居中 NSWindow。
 
 ## 8. 执行记录
 - 时间：2026-04-29
@@ -308,6 +309,25 @@
 - 下一步：
   - 在真实应用里点击“备份与恢复”，确认窗口居中显示，底部横条不再被顶起。
 
+- 时间：2026-04-29
+- 做了什么：
+  - 继续排查同类窗口问题。
+  - 确认 `ShelfView` 里的 `ClipboardSettingsView` 仍使用 `.sheet`，会附着在底部 `NSPanel` 上。
+  - 新增 `ClipboardSettingsWindowController`，用独立 `NSWindow` 居中展示 `ClipboardSettingsView`。
+  - 修改剪贴板齿轮按钮，点击后打开独立窗口，不再触发 `.sheet`。
+- 修改文件：
+  - `cheatsheet/Utils/ClipboardSettingsWindowController.swift`
+  - `cheatsheet/Views/Shelf/ShelfView.swift`
+  - `.project/agent-loop/01-backup-favorites-and-groups.md`
+- 运行命令：
+  - `xcodebuild -project cheatsheet.xcodeproj -scheme cheatsheet -configuration Debug build`
+- 实际输出：
+  - `BUILD SUCCEEDED`
+- 结果：
+  - 构建通过。
+- 下一步：
+  - 在真实应用里点击“剪贴板设置”，确认窗口居中显示，底部横条不再被顶起。
+
 ## 9. 决策和证据
 - 决策：备份只读取 `Category` 和 `Command`。
 - 原因：用户明确要求不包括剪贴板本身内容；`ClipboardItem` 保存真实剪贴板历史。
@@ -378,6 +398,16 @@
 - 实际输出：Debug build 输出 `BUILD SUCCEEDED`。
   - 证明了什么：备份设置展示方式已经从附属 sheet 改为独立窗口。
   - 对方案的影响：备份设置行为和编辑命令窗口一致。
+
+- 决策：剪贴板设置也使用独立 `NSWindow`，不再从底部横条使用 SwiftUI `.sheet`。
+- 原因：剪贴板设置入口位于 `ShelfView`，父窗口同样是贴底 `NSPanel`，使用 `.sheet` 会有同类顶起横条风险。
+- 证据：
+  - 文件路径：`cheatsheet/Views/Shelf/ShelfView.swift`
+  - 函数 / 模块：剪贴板齿轮按钮
+- 关键代码片段或命令：按钮调用 `ClipboardSettingsWindowController.shared.present(viewModel:)`。
+- 实际输出：Debug build 输出 `BUILD SUCCEEDED`。
+  - 证明了什么：剪贴板设置展示方式已从附属 sheet 改为独立窗口。
+  - 对方案的影响：底部横条里的两个设置类大面板都不再附着到横条上。
 
 ## 10. 停止条件
 - 需要用户确认的情况：
