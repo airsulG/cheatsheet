@@ -20,6 +20,7 @@ struct cheatsheetApp: App {
         let backgroundContext = persistenceController.container.newBackgroundContext()
         clipboardMonitor = ClipboardMonitor(context: backgroundContext, pasteboard: SystemPasteboard())
         clipboardMonitor.startMonitoring()
+        BackupService(context: backgroundContext).runAutomaticBackupIfNeeded()
 
         // 不再创建状态栏图标（顶部菜单栏图标已移除）
 

@@ -20,6 +20,7 @@ struct ShelfView: View {
     @State private var isClipboardSelected: Bool = false // 将剪贴板作为一个“标签”
     @State private var isFavoritesSelected: Bool = false  // 收藏标签
     @State private var isSearching: Bool = false
+    @State private var showingBackupSettings = false  // 备份设置
 
     private let cardSpacing: CGFloat = 12
     @StateObject private var dragState = ShelfDragState.shared
@@ -270,6 +271,9 @@ struct ShelfView: View {
         } message: {
             Text("请输入新的分类名称")
         }
+        .sheet(isPresented: $showingBackupSettings) {
+            BackupSettingsView(context: viewModel.viewContext)
+        }
 
         // 结束 body 视图
     }
@@ -355,6 +359,17 @@ struct ShelfView: View {
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             } else {
                 HStack(spacing: 8) {
+                    Button {
+                        showingBackupSettings = true
+                    } label: {
+                        Image(systemName: "externaldrive.badge.timemachine")
+                            .font(.system(size: 14, weight: .regular))
+                            .padding(8)
+                            .background(Circle().fill(Color(NSColor.controlBackgroundColor)))
+                    }
+                    .buttonStyle(.plain)
+                    .help("备份与恢复")
+
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) { isSearching = true }
                     } label: {
