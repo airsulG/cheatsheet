@@ -328,6 +328,40 @@
 - 下一步：
   - 在真实应用里点击“剪贴板设置”，确认窗口居中显示，底部横条不再被顶起。
 
+- 时间：2026-04-29
+- 做了什么：
+  - 按用户确认的“分批提交”方式整理当前未提交源码改动。
+  - 第一批提交剪贴板历史加载、保留时间、手动清理和设置界面。
+  - 第二批提交横条分类右键操作、命令移动分类、分类新建/重命名/删除和横条剪贴板设置入口。
+  - 未提交 Xcode 窗口状态文件、`.DS_Store`、通用 `.project` 模板和 `.claude` 本地配置，避免把本地环境文件混入功能提交。
+- 修改文件：
+  - `cheatsheet/ContentView.swift`
+  - `cheatsheet/Models/ViewModels/PagedClipboardViewModel.swift`
+  - `cheatsheet/Utils/ClipboardMonitor.swift`
+  - `cheatsheet/Utils/ClipboardSettings.swift`
+  - `cheatsheet/Views/ClipboardHistoryView.swift`
+  - `cheatsheet/Views/ClipboardSettingsView.swift`
+  - `cheatsheet/Models/ViewModels/CommandViewModel.swift`
+  - `cheatsheet/Models/ViewModels/ShelfViewModel.swift`
+  - `cheatsheet/Views/Components/TagChipView.swift`
+  - `cheatsheet/Views/Components/TagStripView.swift`
+  - `cheatsheet/Views/Shelf/ShelfCardView.swift`
+  - `cheatsheet/Views/Shelf/ShelfView.swift`
+- 运行命令：
+  - `xcodebuild -project cheatsheet.xcodeproj -scheme cheatsheet -configuration Debug build`
+  - `git commit -m "feat: 优化剪贴板历史加载和清理设置"`
+  - `git commit -m "feat: 增加横条分类和命令管理操作"`
+- 实际输出：
+  - 两次构建均输出 `BUILD SUCCEEDED`。
+  - 提交 `801df43 feat: 优化剪贴板历史加载和清理设置`。
+  - 提交 `6bc2bcf feat: 增加横条分类和命令管理操作`。
+- 结果：
+  - 功能源码已按两批提交完成。
+  - 当前仍有未提交的本地配置和模板文件，需要用户决定是否单独提交或忽略。
+- 下一步：
+  - 如果用户确认要保留 `.project` 和 `.claude`，再分别做文档/本地配置提交。
+  - 如果用户确认不需要提交本地状态文件，可以后续补 `.gitignore` 规则避免反复出现。
+
 ## 9. 决策和证据
 - 决策：备份只读取 `Category` 和 `Command`。
 - 原因：用户明确要求不包括剪贴板本身内容；`ClipboardItem` 保存真实剪贴板历史。
