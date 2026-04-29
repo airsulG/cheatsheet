@@ -51,27 +51,41 @@ final class PagedClipboardViewModel: ObservableObject {
 
     func loadNextPage() {
         guard !isLoading, hasMore else { return }
-        isLoading = true
-        errorMessage = nil
+        
+        // 🟢 优化1：在主线程标记加载状态
+        DispatchQueue.main.async {
+            self.isLoading = true
+            self.errorMessage = nil
+        }
 
-        let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
-        request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.createdAt, ascending: false)]
-        request.fetchOffset = offset
-        request.fetchLimit = pageSize
+        // 🟢 优化1：异步执行，避免阻塞主线程
+        viewContext.perform {
+            let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
+            request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.createdAt, ascending: false)]
+            request.fetchOffset = self.offset
+            request.fetchLimit = self.pageSize
+            
+            // 🟢 优化2：只加载必要字段，排除大数据字段（data 和 sourceAppIcon）
+            // 这些字段会在显示时通过 fault 机制按需加载
+            request.propertiesToFetch = ["id", "content", "type", "createdAt", "sourceBundleId", "sourceAppName"]
+            request.returnsObjectsAsFaults = false  // 避免后续访问时触发额外的 fault
 
-        do {
-            let page = try viewContext.fetch(request)
-            DispatchQueue.main.async {
-                self.items.append(contentsOf: page)
-                self.offset += page.count
-                self.hasMore = page.count == self.pageSize
-                self.isLoading = false
-            }
-        } catch {
-            DispatchQueue.main.async {
-                self.errorMessage = "加载剪贴板失败: \(error.localizedDescription)"
-                self.isLoading = false
-                self.hasMore = false
+            do {
+                let page = try self.viewContext.fetch(request)
+                
+                // 🟢 结果回到主线程更新 UI
+                DispatchQueue.main.async {
+                    self.items.append(contentsOf: page)
+                    self.offset += page.count
+                    self.hasMore = page.count == self.pageSize
+                    self.isLoading = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "加载剪贴板失败: \(error.localizedDescription)"
+                    self.isLoading = false
+                    self.hasMore = false
+                }
             }
         }
     }
@@ -95,7 +109,13 @@ final class PagedClipboardViewModel: ObservableObject {
                 ok = pb.setString(url.absoluteString, forType: .fileURL)
             }
         case "html":
-            ok = pb.setString(item.content ?? "", forType: .html)
+            // 为提升兼容性：写回 HTML 同时提供纯文本回退
+            let html = item.content ?? ""
+            pb.declareTypes([.html, .string], owner: nil)
+            _ = pb.setString(html, forType: .html)
+            let plain = htmlToPlainText(html)
+            _ = pb.setString(plain, forType: .string)
+            ok = true
         case "rtf":
             if let data = item.data {
                 ok = pb.setData(data, forType: .rtf)
@@ -123,6 +143,112 @@ final class PagedClipboardViewModel: ObservableObject {
                 }
             } catch {
                 DispatchQueue.main.async { self.errorMessage = "删除失败: \(error.localizedDescription)" }
+            }
+        }
+    }
+    
+    // MARK: - Cleanup
+    
+    /// 清理所有剪贴板历史
+    func clearAll(completion: ((Int) -> Void)? = nil) {
+        viewContext.perform {
+            let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
+            do {
+                let all = try self.viewContext.fetch(request)
+                let count = all.count
+                for item in all {
+                    self.viewContext.delete(item)
+                }
+                try self.viewContext.save()
+                DispatchQueue.main.async {
+                    self.items.removeAll()
+                    self.offset = 0
+                    self.hasMore = false
+                    completion?(count)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "清理失败: \(error.localizedDescription)"
+                    completion?(0)
+                }
+            }
+        }
+    }
+    
+    /// 清理指定天数之前的记录
+    func clearOlderThan(days: Int, completion: ((Int) -> Void)? = nil) {
+        guard days > 0 else {
+            completion?(0)
+            return
+        }
+        
+        viewContext.perform {
+            guard let cutoffDate = Calendar.current.date(byAdding: .day, value: -days, to: Date()) else {
+                DispatchQueue.main.async { completion?(0) }
+                return
+            }
+            
+            let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
+            request.predicate = NSPredicate(format: "createdAt < %@", cutoffDate as NSDate)
+            
+            do {
+                let oldItems = try self.viewContext.fetch(request)
+                let count = oldItems.count
+                for item in oldItems {
+                    self.viewContext.delete(item)
+                }
+                try self.viewContext.save()
+                DispatchQueue.main.async {
+                    // 重新加载以更新列表
+                    self.resetAndLoadFirstPage()
+                    completion?(count)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "清理失败: \(error.localizedDescription)"
+                    completion?(0)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Statistics
+    
+    /// 获取剪贴板记录总数
+    func getTotalCount(completion: @escaping (Int) -> Void) {
+        viewContext.perform {
+            let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
+            do {
+                let count = try self.viewContext.count(for: request)
+                DispatchQueue.main.async { completion(count) }
+            } catch {
+                DispatchQueue.main.async { completion(0) }
+            }
+        }
+    }
+    
+    /// 获取数据占用大小（估算）
+    func getStorageSize(completion: @escaping (Int64) -> Void) {
+        viewContext.perform {
+            let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
+            do {
+                let all = try self.viewContext.fetch(request)
+                var totalSize: Int64 = 0
+                for item in all {
+                    // 估算：content 字符数 * 2 + data 大小
+                    if let content = item.content {
+                        totalSize += Int64(content.utf8.count)
+                    }
+                    if let data = item.data {
+                        totalSize += Int64(data.count)
+                    }
+                    if let iconData = item.sourceAppIcon {
+                        totalSize += Int64(iconData.count)
+                    }
+                }
+                DispatchQueue.main.async { completion(totalSize) }
+            } catch {
+                DispatchQueue.main.async { completion(0) }
             }
         }
     }

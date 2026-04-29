@@ -8,7 +8,9 @@
 import SwiftUI
 
 struct ClipboardHistoryView: View {
-    @ObservedObject var viewModel: ClipboardHistoryViewModel
+    @ObservedObject var viewModel: PagedClipboardViewModel
+    @State private var showCopyToast = false
+    @State private var showSettings = false
 
     private let gridColumns = [
         GridItem(.adaptive(minimum: 240, maximum: 320), spacing: 12)
@@ -25,22 +27,31 @@ struct ClipboardHistoryView: View {
                     Text("剪贴板")
                         .font(.largeTitle)
                         .fontWeight(.bold)
-                    Text("(\(viewModel.items.count)条记录)")
+                    Text("(\(viewModel.items.count)条记录\(viewModel.hasMore ? "+" : ""))")
                         .font(.title3)
                         .foregroundColor(.secondary)
                     Spacer()
                     Button(action: {
-                        viewModel.fetchItems()
+                        showSettings = true
+                    }) {
+                        Image(systemName: "gearshape")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("剪贴板设置")
+                    
+                    Button(action: {
+                        viewModel.resetAndLoadFirstPage()
                     }) {
                         Image(systemName: "arrow.clockwise")
                     }
                     .buttonStyle(.borderless)
+                    .help("刷新")
                 }
                 .padding([.horizontal, .top])
                 .padding(.bottom, 8)
 
                 // List of items
-                if viewModel.isLoading {
+                if viewModel.isLoading && viewModel.items.isEmpty {
                     ProgressView("加载中...")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if viewModel.items.isEmpty {
@@ -49,27 +60,41 @@ struct ClipboardHistoryView: View {
                     ScrollView {
                         LazyVGrid(columns: gridColumns, spacing: 12) {
                             ForEach(viewModel.items) { item in
-                                ClipboardItemCardView(item: item, viewModel: viewModel)
+                                ClipboardItemCardView(item: item, viewModel: viewModel, showCopyToast: $showCopyToast)
+                                    .onAppear {
+                                        // 滚动到最后几个时加载更多
+                                        if item.objectID == viewModel.items.last?.objectID {
+                                            viewModel.loadNextPage()
+                                        }
+                                    }
                             }
                         }
                         .padding()
+                        
+                        // 加载更多指示器
+                        if viewModel.isLoading && !viewModel.items.isEmpty {
+                            ProgressView()
+                                .padding()
+                        }
                     }
                 }
             }
         }
         .onAppear {
-            // No longer needed to call cleanup here
-            viewModel.fetchItems()
+            viewModel.ensureFirstPageLoaded()
         }
         .overlay(
             Group {
-                if viewModel.showCopyToast {
+                if showCopyToast {
                     CopyToastView()
                         .transition(.opacity.combined(with: .scale))
-                        .animation(.easeInOut(duration: 0.3), value: viewModel.showCopyToast)
+                        .animation(.easeInOut(duration: 0.3), value: showCopyToast)
                 }
             }
         )
+        .sheet(isPresented: $showSettings) {
+            ClipboardSettingsView(viewModel: viewModel)
+        }
         .alert("错误", isPresented: .constant(viewModel.errorMessage != nil)) {
             Button("确定") { viewModel.errorMessage = nil }
         } message: {
@@ -96,7 +121,8 @@ struct ClipboardHistoryView: View {
 
 private struct ClipboardItemCardView: View {
     let item: ClipboardItem
-    @ObservedObject var viewModel: ClipboardHistoryViewModel
+    @ObservedObject var viewModel: PagedClipboardViewModel
+    @Binding var showCopyToast: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -119,10 +145,18 @@ private struct ClipboardItemCardView: View {
         .shadow(color: Color.black.opacity(0.05), radius: 1, x: 0, y: 1)
         .contentShape(Rectangle())
         .onTapGesture {
-            viewModel.copyItem(item)
+            if viewModel.copyItem(item) {
+                showCopyToast = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { showCopyToast = false }
+            }
         }
         .contextMenu {
-            Button("复制") { viewModel.copyItem(item) }
+            Button("复制") {
+                if viewModel.copyItem(item) {
+                    showCopyToast = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { showCopyToast = false }
+                }
+            }
             Button("删除", role: .destructive) { viewModel.deleteItem(item) }
         }
     }
@@ -130,6 +164,6 @@ private struct ClipboardItemCardView: View {
 
 #Preview {
     let context = PersistenceController.preview.container.viewContext
-    let viewModel = ClipboardHistoryViewModel(context: context)
+    let viewModel = PagedClipboardViewModel(context: context)
     return ClipboardHistoryView(viewModel: viewModel).frame(width: 800)
 }

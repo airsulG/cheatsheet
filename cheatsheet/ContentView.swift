@@ -15,7 +15,7 @@ struct ContentView: View {
     // MARK: - View Models
     @StateObject private var categoryViewModel: CategoryViewModel
     @StateObject private var commandViewModel: CommandViewModel
-    @StateObject private var clipboardHistoryViewModel: ClipboardHistoryViewModel
+    @StateObject private var pagedClipboardViewModel: PagedClipboardViewModel
 
     // MARK: - State
     enum MainContentState: Equatable {
@@ -38,7 +38,7 @@ struct ContentView: View {
         let context = PersistenceController.shared.container.viewContext
         _categoryViewModel = StateObject(wrappedValue: CategoryViewModel(context: context))
         _commandViewModel = StateObject(wrappedValue: CommandViewModel(context: context))
-        _clipboardHistoryViewModel = StateObject(wrappedValue: ClipboardHistoryViewModel(context: context))
+        _pagedClipboardViewModel = StateObject(wrappedValue: PagedClipboardViewModel(context: context))
     }
 
     var body: some View {
@@ -61,7 +61,7 @@ struct ContentView: View {
                     WelcomeView()
                         .background(.clear)
                 case .clipboardHistory:
-                    ClipboardHistoryView(viewModel: clipboardHistoryViewModel)
+                    ClipboardHistoryView(viewModel: pagedClipboardViewModel)
                         .background(.clear)
                 case .category(let selectedCategory):
                     CommandListView(category: selectedCategory, commandViewModel: commandViewModel)
