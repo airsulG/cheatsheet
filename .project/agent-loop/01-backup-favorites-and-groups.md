@@ -1,11 +1,11 @@
 # 01 收藏和分组备份导入
 
 ## 0. 当前状态
-- 当前阶段：第一版编码完成，构建已通过，等待后续真实界面验收。
+- 当前阶段：第一版编码完成；已修复备份窗口不应顶起底部横条的问题，等待真实界面验收。
 - 当前分支：`main`。
 - 当前是否允许自动执行：本轮已按用户“开始自循环编码”执行；后续清空式导入、覆盖旧备份、发布构建仍需用户确认。
 - 当前阻塞：当前 Xcode scheme 没有配置测试动作，`xcodebuild test` 无法执行测试文件。
-- 下一步：用户在应用里打开“备份与恢复”，选择文件夹，执行一次导出和导入试用；如需要覆盖式恢复，再单独确认。
+- 下一步：用户在应用里打开“备份与恢复”，确认窗口居中显示且底部横条不移动；再选择文件夹执行一次导出和导入试用。
 
 ## 1. 目标和需求
 - 用户真正想解决的问题：换电脑时，如果忘记迁移软件本地数据库，自己整理的分组、收藏和创建的剪贴内容会丢失，恢复成本很高。
@@ -228,6 +228,7 @@
 - [x] 增加单元测试文件。
 - [x] 运行构建和测试：构建通过；测试命令因 scheme 未配置测试动作而无法执行。
 - [x] 更新执行记录和最终验证结果。
+- [x] 修复备份设置窗口展示方式：从 SwiftUI sheet 改为独立居中 NSWindow。
 
 ## 8. 执行记录
 - 时间：2026-04-29
@@ -287,6 +288,25 @@
   - 测试文件已创建，但当前 Xcode project 没有测试 target，暂时不能执行。
 - 下一步：
   - 需要在真实应用里选择备份文件夹，导出一次 JSON，并导入到测试数据环境做人工验收。
+
+- 时间：2026-04-29
+- 做了什么：
+  - 分析用户反馈：点击“备份与恢复”后，底部横条被顶起。
+  - 确认原因：`ShelfView` 使用 SwiftUI `.sheet` 展示 `BackupSettingsView`，sheet 会附着在底部 `NSPanel` 上，macOS 会移动父窗口来显示 sheet。
+  - 新增 `BackupWindowController`，用独立 `NSWindow` 居中展示 `BackupSettingsView`。
+  - 修改 `ShelfView` 的备份按钮，点击后直接打开独立窗口，不再触发 `.sheet`。
+- 修改文件：
+  - `cheatsheet/Utils/BackupWindowController.swift`
+  - `cheatsheet/Views/Shelf/ShelfView.swift`
+  - `.project/agent-loop/01-backup-favorites-and-groups.md`
+- 运行命令：
+  - `xcodebuild -project cheatsheet.xcodeproj -scheme cheatsheet -configuration Debug build`
+- 实际输出：
+  - `BUILD SUCCEEDED`
+- 结果：
+  - 构建通过。
+- 下一步：
+  - 在真实应用里点击“备份与恢复”，确认窗口居中显示，底部横条不再被顶起。
 
 ## 9. 决策和证据
 - 决策：备份只读取 `Category` 和 `Command`。
@@ -348,6 +368,16 @@
   - 实际输出：构建时 entitlements 显示 read-write 已生效。
   - 证明了什么：应用具备写入用户选择文件夹的沙盒权限。
   - 对方案的影响：备份设置可以使用安全书签持久保存文件夹授权。
+
+- 决策：备份设置使用独立 `NSWindow`，不再使用 SwiftUI `.sheet`。
+- 原因：底部横条是贴底 `NSPanel`，`.sheet` 会附着在这个面板上，导致系统移动父面板；独立窗口可以居中显示且不影响横条位置。
+- 证据：
+  - 文件路径：`cheatsheet/Views/Shelf/ShelfView.swift`
+  - 函数 / 模块：备份按钮
+- 关键代码片段或命令：按钮调用 `BackupWindowController.shared.present(context:)`。
+- 实际输出：Debug build 输出 `BUILD SUCCEEDED`。
+  - 证明了什么：备份设置展示方式已经从附属 sheet 改为独立窗口。
+  - 对方案的影响：备份设置行为和编辑命令窗口一致。
 
 ## 10. 停止条件
 - 需要用户确认的情况：
