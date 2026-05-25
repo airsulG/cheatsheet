@@ -25,120 +25,63 @@
 ## 3. 无人值守模式入口
 
 无人值守模式的项目级状态以下方 `UNATTENDED MODE` 哨兵块是否真实存在为准。
-后续 Agent 启动时若发现该哨兵块，应按块内规则恢复无人值守循环。
+后续 Agent 启动时若发现该哨兵块，应按全局技能 `karl-unattended-mode` 恢复无人值守循环。
 
 <<<<<<<<<<<<<<<<<<<< UNATTENDED MODE <<<<<<<<<<<<<<<<<<<<
 # 无人值守模式
 
 当前项目处于无人值守自主执行模式。
 
-在会话当中的记忆和规则容易丢失，因此本区块是当前模式的项目级事实来源。
-后续 Agent 必须以本区块为准，根据推荐流程自主、自动、持续调用技能推进，
-执行编码、测试验收，并交付可验证结果。
+通用执行规则、打洞流程、状态语义、停止条件参照全局技能：
+`/Users/zhouqi/.codex/skills/karl-unattended-mode/SKILL.md`
 
-当 Karl 不在线时，Agent 应按 `.project/agent-loop/` 连续执行：
-
-1. 可自主补规格、补 dev-plan、编码、测试、写回文档、原子提交。
-2. 当前任务完成后，自动选择下一个 `ready` / `approved` / `implementing` 任务继续。
-3. 没有可执行任务但当前阶段缺规格或缺计划时，先补规格或计划。
-4. 每轮都必须写回 task、`00-index.md`，必要时写回 `PRODUCT.md`。
-5. 每完成一个稳定里程碑，使用 Conventional Commits 做原子提交。
-6. 只有触发停止条件、全部任务完成、或 Karl 明确退出模式时，才停止连续执行。
-
-无人值守模式下，普通 `plan_review_policy: Karl_review` 不应阻止继续推进。
-Agent 写完 dev-plan 后，如果没有触发停止条件，应把本任务推进为 `approved`
-并继续进入 `karl-dev-execute`。如果为了完成当前目标必须扩大修改范围，Agent
-可以继续，但必须在 task 中记录原因、影响文件和验证方式。只有计划涉及部署、
-不可逆迁移、永久删除、生产配置、凭据缺失、需求边界变化或多个合理修法时，
-才必须停下并写回 `blocked`。
-
-## 无人值守执行循环
-
-无人值守模式的执行循环是一个任务调度算法，不是固定 PDCA。
-
-每一轮必须按下面顺序推进：
-
-```text
-第 0 步：恢复事实
-- 读取 AGENTS.md，确认 UNATTENDED MODE 哨兵块存在。
-- 读取 .project/agent-loop/00-index.md。
-- 读取当前候选 task。
-- 用 git status 确认真实工作区。
-
-第 1 步：选择任务
-- 优先继续 status=implementing 的任务。
-- 其次选择 status=approved 的任务。
-- 其次选择 status=plan_review 且 plan_review_policy=auto_approved 的任务。
-- 其次选择 status=ready 且依赖完成的任务。
-- 如果没有可执行任务但当前阶段缺 task，转入 karl-spec-task-compile。
-- 如果规格不清，转入 karl-spec-discover 或 karl-spec-final-shape。
-
-第 2 步：判断角色
-- task 缺少明确目标、范围、验收标准 -> karl-spec-discover / karl-spec-final-shape。
-- task 有阶段目标但缺少 agent-loop 骨架 -> karl-spec-task-compile。
-- task 有骨架但缺少仓库实现计划 -> karl-dev-plan。
-- task 已 approved 且 §8 自循环编排存在 -> karl-dev-execute。
-- 发现具体 bug -> karl-dev-debug。
-- 发现异步、状态、重试、缓存、流式或多阶段数据污染 -> karl-dev-trace。
-
-第 2.5 步：无人值守计划审核
-- dev-plan 写完后，如果没有触发停止条件，应把 status 改为 approved。
-- 如果 task 的 §8 本任务专属自循环编排已经写入，继续进入 karl-dev-execute。
-- 如果计划需要扩大修改范围，记录原因、影响文件和验证方式后继续。
-- 如果计划需要高风险动作、改变产品边界或存在多个合理方案，写回 blocked 并停止。
-
-第 3 步：执行一轮最小闭环
-- 围绕当前 task 的目标执行必要修改；需要扩大修改范围时，先在 task 记录原因。
-- 完成一个能验证的真实增量。
-- 运行和风险匹配的测试或构建。
-- 把结果写回 task 和 00-index。
-- 完成稳定里程碑后做原子 commit。
-
-第 4 步：决定继续或停止
-- 未触发停止条件，回到第 1 步继续。
-- 触发停止条件，写回 blocked 状态并汇报。
-- 所有任务 done，写回 execution_mode: interactive，并移除 AGENTS.md 哨兵块。
-```
+后续 Agent 必须以本哨兵块的存在 + `00-index.md` 的 `execution_mode: unattended` 双重确认，
+判断当前项目是否处于无人值守状态。
 
 ## 当前无人值守任务可验收工作清单
 
-- [ ] **首屏延迟治理 task 12**（task `12-shelf-clipboard-fast-open.md`）
+本节是当前项目独有的真实工作清单，不是抽象质量标准。
+进入模式时由 Agent 根据 PRODUCT.md / 00-index.md / 当前候选 task 生成；
+退出模式时随哨兵块一起移除。
+
+清单格式：
+
+```text
+- [ ] 交付项：具体要做成什么
+      验收方式：用什么真实操作、命令、MCP 请求、界面路径或数据结果证明完成
+      证据写回：结果写回哪个 task、00-index 或 PRODUCT 位置
+```
+
+### 当前剩余项
+
+本轮 unattended 已完成 task 10 / 11 / 12 / 13（commit `45a82b5` / `72d6bc9` / `1e890b4` / `c97d8bd` / `3eef0e2`），
+全部代码层面交付到位且 `xcodebuild` 通过。剩余只有需要 Karl 真实操作验收的部分：
+
+- [ ] **本轮代码改动的真实界面验收**（awaiting_user_acceptance）
       验收方式：
-      1. `xcodebuild -project cheatsheet.xcodeproj -scheme cheatsheet -destination 'platform=macOS' build` 成功
-      2. `ShelfWindowController.show()` 路径上能看到对 `pagedClipboardVM.ensurePreviewFirstPageLoaded()` 的调用，让数据加载与 panel 出现并行
-      3. `ShelfView` 的 `isClipboardSelected` / `isFavoritesSelected` 改为由 `@AppStorage` 派生，关掉 panel 再开会回到上次的 tab
-      4. `loadNextPreviewPage` 用 `propertiesToFetch` + `returnsObjectsAsFaults = true` 切窄 fetch，map 阶段不访问 `sourceAppIcon`/`data`；图标和图片通过 `enrichBlobs` 异步在 BG 补回
+      1. 在 Xcode 里 ⌘R 启动 cheatsheet
+      2. 长跑 30 分钟 + 频繁复制粘贴：不应再出现长跑后 SIGABRT（task 10）
+      3. 唤醒 Shelf：来源 App 图标和图片缩略真实显示（task 11）
+      4. 重启后第一次唤醒：剪贴板 tab 默认选中，文本预览第一帧可见（task 12）
+      5. 复制新内容时其他条目不闪烁、不抖动（task 13）
       证据写回：
-      - 改动文件 + 行号 -> task §9
-      - 构建命令输出摘要 -> task §8
-      - 用 grep 确认 `sourceAppIcon` 与 `item.data` 仅在 enrich 路径上被访问 -> task §9
+      - 视觉验收结果 → 由 Karl 在对话里反馈
+      - 如有回归 → Karl 给出现象后由后续 Agent 进入 karl-dev-debug
 
-- [ ] **增量合并 task 13**（task `13-shelf-clipboard-incremental-update.md`）
+- [ ] **task 01 备份功能验收**（awaiting_user_acceptance）
       验收方式：
-      1. `xcodebuild` 成功
-      2. `PagedClipboardViewModel.contextDidSave` 不再无脑调用 `refreshLoadedClipboardData()`；改为读取 `userInfo` 的 inserted/updated/deleted，分别对 `previewItems` 做 patch
-      3. 复制一条新内容时 Shelf 已经打开且选中剪贴板，新条目顶端出现，老条目不闪烁、滚动位置不抖
-      4. 删除一条时该条目即时消失；其他条目不动
+      1. 在 cheatsheet 里打开"备份与恢复"窗口选择文件夹
+      2. 执行一次手动导出 → 检查目标文件夹是否生成 JSON
+      3. 在备份窗口选择该 JSON → 执行手动导入 → 检查分类 / 命令 / 收藏是否恢复
       证据写回：
-      - 改动文件 + 行号 -> task §9
-      - 构建命令输出摘要 -> task §8
-      - 与 task 12 的 fetch 切窄路径如何衔接（增量插入条目也走 textual + enrich 两阶段）-> task §9
+      - 验收结果 → task 01 §8 执行记录
+      - 如发现导出 / 导入回归 → 进入 karl-dev-debug
 
-- [ ] **commit**
-      验收方式：
-      1. `git diff --name-only --cached` 只包含本次修复涉及的文件 + task 文档 + 00-index.md
-      2. commit message 使用 Conventional Commits（`perf:` 或 `fix:` 前缀），中文正文说明根因和影响
-      证据写回：
-      - commit hash + 标题 -> task §8
-
-无人值守模式仍然禁止：
-
-1. 部署、发布、修改线上配置。
-2. 数据库不可逆迁移或生产数据重写。
-3. 永久删除、重置分支、回滚用户改动、强推。
-4. 修改外部账号权限、发送第三方消息、创建外部 PR。
-5. 在凭据缺失、需求边界变化、测试失败且有多个合理修法时继续硬跑。
+按 `karl-unattended-mode` 第 4 步本轮终态判定：
+当前所有剩余项都是 `awaiting_user_acceptance`，已触发 (b) 主动收尾退出条件。
+但 Karl 未给出新任务且未明确退出指令，本哨兵块按 Karl 上一轮决定保留挂起。
+下一个 Agent 进来时应按技能 §13.2 重新核对：是否需要主动退出。
 
 退出方式：
-Karl 明确输入"退出无人值守模式"后，Agent 应移除本区块，并把 `execution_mode` 改回 `interactive`。
+Karl 明确输入"退出无人值守模式"后，Agent 应移除本哨兵块，并把 `execution_mode` 改回 `interactive`。
 <<<<<<<<<<<<<<<<<<<< END UNATTENDED MODE <<<<<<<<<<<<<<<<<<<<
