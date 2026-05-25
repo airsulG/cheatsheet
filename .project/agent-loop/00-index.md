@@ -20,19 +20,33 @@ last_active_task: 10-coredata-crash-mainqueue-merge.md
 | `09-shelf-open-animation-smoothness.md` | 底部横条快捷键打开动画卡顿 | done；已将打开/关闭从高度动画改为固定高度位移动画，并减少打开期间重复解码和二次动画，构建通过 |
 | `10-coredata-crash-mainqueue-merge.md` | 长跑后 NSInvalidArgumentException 在 `_postRefreshedObjectsNotificationAndClearList` 路径上崩溃 | done；ShelfViewModel/ClipboardHistoryViewModel 的 contextDidSave 改为 main 队列 fetch，移除手动 mergeChanges；xcodebuild 通过；commit 45a82b5 |
 | `11-shelf-clipboard-icon-and-image-preview.md` | 底部横条剪贴板卡片不再显示来源 App 图标和图片预览 | done；ClipboardPreviewItem 新增 imageData，maxSourceAppIconBytes 放宽到 512KB，ShelfCard image case 真渲染；xcodebuild 通过 |
+| `12-shelf-clipboard-fast-open.md` | 唤醒 Shelf 后剪贴板首屏要等几百 ms ~ 几 s | done；ShelfWindowController.show 预取 + AppStorage 记忆默认 tab + fetch 切窄到文本字段 + enrichBlobs 异步补 blob；xcodebuild 通过 |
+| `13-shelf-clipboard-incremental-update.md` | 复制一次就整页 reset，闪烁明显 | status=approved；contextDidSave 改为读 userInfo 增量 patch |
 
 ## 任务状态字段
 
 ```text
-任务：11-shelf-clipboard-icon-and-image-preview.md
+任务：12-shelf-clipboard-fast-open.md
 status: done
 phase: implementation-complete
 role_next: none
 plan_review_policy: auto_approved
-depends_on: 10-coredata-crash-mainqueue-merge.md（done）
+depends_on: 11（done）
 parallel_safe: yes
-current_goal: ClipboardPreviewItem 携带 image 字节、放宽源 App 图标阈值、ShelfCard image case 真渲染
-next_action: 等待 Karl 视觉验收
+current_goal: 唤醒 Shelf 后剪贴板首屏可见时间从几百 ms ~ 几 s 降到只感知打开动画
+next_action: 等待 Karl 体感验收
 blocker: none
-updated_at: 2026-05-25 12:42
+updated_at: 2026-05-25 13:05
+
+任务：13-shelf-clipboard-incremental-update.md
+status: approved
+phase: implementing-ready
+role_next: karl-dev-execute
+plan_review_policy: auto_approved
+depends_on: 12（done）
+parallel_safe: yes
+current_goal: 复制 / 删除时只对 previewItems 做增量 patch，不再整页 reset
+next_action: 实施 applyChanges + contextDidSave 重写
+blocker: none
+updated_at: 2026-05-25 13:05
 ```

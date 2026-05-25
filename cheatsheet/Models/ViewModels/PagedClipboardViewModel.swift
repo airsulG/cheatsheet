@@ -32,6 +32,23 @@ struct ClipboardPreviewItem: Identifiable, Equatable {
             return true
         }
     }
+
+    /// 把异步加载到的二进制字节合并回当前 preview。文本字段不变。
+    func withBlobs(sourceAppIconData: Data?,
+                   sourceAppIconCacheKey: String?,
+                   imageData: Data?) -> ClipboardPreviewItem {
+        ClipboardPreviewItem(
+            id: id,
+            uuid: uuid,
+            type: type,
+            contentPreview: contentPreview,
+            sourceAppName: sourceAppName,
+            sourceAppIconData: sourceAppIconData,
+            sourceAppIconCacheKey: sourceAppIconCacheKey,
+            imageData: imageData,
+            createdAt: createdAt
+        )
+    }
 }
 
 final class PagedClipboardViewModel: ObservableObject {
@@ -145,8 +162,6 @@ final class PagedClipboardViewModel: ObservableObject {
         let offset = previewOffset
         let limit = previewPageSize
         let maxPreviewCharacters = maxPreviewCharacters
-        let maxSourceAppIconBytes = maxSourceAppIconBytes
-        let maxImagePreviewBytes = maxImagePreviewBytes
 
         previewContext.perform { [weak self] in
             guard let self else { return }
@@ -157,19 +172,15 @@ final class PagedClipboardViewModel: ObservableObject {
             request.fetchLimit = limit
             request.fetchBatchSize = limit
             request.relationshipKeyPathsForPrefetching = []
-            request.returnsObjectsAsFaults = false
+            // 第一阶段只取文本字段，避免 external blob IO 阻塞首屏。
+            // sourceAppIcon / data 在 enrichBlobs 阶段异步补回。
+            request.propertiesToFetch = ["id", "content", "type", "createdAt", "sourceBundleId", "sourceAppName"]
+            request.returnsObjectsAsFaults = true
 
             do {
                 let page = try self.previewContext.fetch(request)
                 let previews = page.map { item in
                     let type = item.type ?? "text"
-                    let iconData = Self.cappedSourceAppIconData(
-                        item.sourceAppIcon,
-                        maxBytes: maxSourceAppIconBytes
-                    )
-                    let imageData: Data? = (type == "image")
-                        ? Self.cappedImageData(item.data, maxBytes: maxImagePreviewBytes)
-                        : nil
                     return ClipboardPreviewItem(
                         id: item.objectID,
                         uuid: item.id,
@@ -180,12 +191,13 @@ final class PagedClipboardViewModel: ObservableObject {
                             maxCharacters: maxPreviewCharacters
                         ),
                         sourceAppName: item.sourceAppName,
-                        sourceAppIconData: iconData,
-                        sourceAppIconCacheKey: Self.sourceAppIconCacheKey(for: iconData),
-                        imageData: imageData,
+                        sourceAppIconData: nil,
+                        sourceAppIconCacheKey: nil,
+                        imageData: nil,
                         createdAt: item.createdAt
                     )
                 }
+                let pageIDs = previews.map { $0.id }
 
                 DispatchQueue.main.async {
                     guard generation == self.previewGeneration else { return }
@@ -193,6 +205,9 @@ final class PagedClipboardViewModel: ObservableObject {
                     self.previewOffset += previews.count
                     self.hasMorePreview = previews.count == limit
                     self.isPreviewLoading = false
+
+                    // 第二阶段：异步补 blob，避免阻塞首屏。
+                    self.enrichBlobs(forItemsWithIDs: pageIDs, generation: generation)
                 }
             } catch {
                 DispatchQueue.main.async {
@@ -200,6 +215,65 @@ final class PagedClipboardViewModel: ObservableObject {
                     self.errorMessage = "加载剪贴板失败: \(error.localizedDescription)"
                     self.isPreviewLoading = false
                     self.hasMorePreview = false
+                }
+            }
+        }
+    }
+
+    /// 第二阶段加载：拉取 sourceAppIcon / data 这两个 external blob 字段，
+    /// 在主队列把对应 previewItems 合并回去。这一步如果用户切走 generation 会被丢弃。
+    private func enrichBlobs(forItemsWithIDs ids: [NSManagedObjectID], generation: Int) {
+        guard !ids.isEmpty else { return }
+
+        let maxSourceAppIconBytes = maxSourceAppIconBytes
+        let maxImagePreviewBytes = maxImagePreviewBytes
+
+        previewContext.perform { [weak self] in
+            guard let self else { return }
+            // 用 SELF IN ids 一次性把这一页的 blob 字段拉回来，比逐条 existingObject 高效。
+            let req: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
+            req.predicate = NSPredicate(format: "SELF IN %@", ids)
+            req.returnsObjectsAsFaults = false
+            // 不限制 propertiesToFetch：让 CoreData 一次性 materialize 包括 external blob 在内的全部属性。
+
+            let fetched: [ClipboardItem]
+            do {
+                fetched = try self.previewContext.fetch(req)
+            } catch {
+                return
+            }
+
+            // 在 BG 队列就把字节裁好，避免到主队列再做 cap 判断 + Data 拷贝
+            struct Blobs {
+                let iconData: Data?
+                let iconCacheKey: String?
+                let imageData: Data?
+            }
+            var blobs: [NSManagedObjectID: Blobs] = [:]
+            blobs.reserveCapacity(fetched.count)
+            for item in fetched {
+                let iconData = Self.cappedSourceAppIconData(item.sourceAppIcon, maxBytes: maxSourceAppIconBytes)
+                let imageData: Data? = ((item.type ?? "text") == "image")
+                    ? Self.cappedImageData(item.data, maxBytes: maxImagePreviewBytes)
+                    : nil
+                blobs[item.objectID] = Blobs(
+                    iconData: iconData,
+                    iconCacheKey: Self.sourceAppIconCacheKey(for: iconData),
+                    imageData: imageData
+                )
+            }
+
+            DispatchQueue.main.async {
+                guard generation == self.previewGeneration else { return }
+                guard !blobs.isEmpty else { return }
+                for (idx, preview) in self.previewItems.enumerated() {
+                    if let b = blobs[preview.id] {
+                        self.previewItems[idx] = preview.withBlobs(
+                            sourceAppIconData: b.iconData,
+                            sourceAppIconCacheKey: b.iconCacheKey,
+                            imageData: b.imageData
+                        )
+                    }
                 }
             }
         }

@@ -102,28 +102,32 @@ Agent 写完 dev-plan 后，如果没有触发停止条件，应把本任务推�
 
 ## 当前无人值守任务可验收工作清单
 
-- [ ] **修复 CoreData 主队列合并崩溃**（task `10-coredata-crash-mainqueue-merge.md`）
+- [ ] **首屏延迟治理 task 12**（task `12-shelf-clipboard-fast-open.md`）
       验收方式：
-      1. `xcodebuild -project cheatsheet.xcodeproj -scheme cheatsheet -destination 'platform=macOS' build` 成功，0 error 0 warning（与本次修复相关的范围内）
-      2. `cheatsheet/Models/ViewModels/ShelfViewModel.swift` 与 `cheatsheet/Models/ViewModels/ClipboardHistoryViewModel.swift` 的 `contextDidSave(_:)` 不再在通知线程上调用 `viewContext.mergeChanges(...)`、`viewContext.fetch(...)` 或写入 `@Published` 属性
-      3. 同源扫描确认整个工程仅 `PagedClipboardViewModel.contextDidSave(_:)` 一处保留 `DispatchQueue.main.async` 模式作为唯一参考写法
+      1. `xcodebuild -project cheatsheet.xcodeproj -scheme cheatsheet -destination 'platform=macOS' build` 成功
+      2. `ShelfWindowController.show()` 路径上能看到对 `pagedClipboardVM.ensurePreviewFirstPageLoaded()` 的调用，让数据加载与 panel 出现并行
+      3. `ShelfView` 的 `isClipboardSelected` / `isFavoritesSelected` 改为由 `@AppStorage` 派生，关掉 panel 再开会回到上次的 tab
+      4. `loadNextPreviewPage` 用 `propertiesToFetch` + `returnsObjectsAsFaults = true` 切窄 fetch，map 阶段不访问 `sourceAppIcon`/`data`；图标和图片通过 `enrichBlobs` 异步在 BG 补回
       证据写回：
-      - 改动文件 + 行号 -> task §9 决策和证据
-      - 构建命令 + 输出摘要 -> task §8 执行记录
-      - 与 crash report 的对照（`_postRefreshedObjectsNotificationAndClearList` 路径）-> task §9
+      - 改动文件 + 行号 -> task §9
+      - 构建命令输出摘要 -> task §8
+      - 用 grep 确认 `sourceAppIcon` 与 `item.data` 仅在 enrich 路径上被访问 -> task §9
 
-- [ ] **同源问题扫描**
+- [ ] **增量合并 task 13**（task `13-shelf-clipboard-incremental-update.md`）
       验收方式：
-      1. 在 `cheatsheet/` 目录下 grep `mergeChanges(fromContextDidSave:` / `addObserver(.*NSManagedObjectContextDidSave` / `viewContext.fetch` / `@objc.*contextDidSave`，逐一核对每处是否仍在通知线程上越界
-      2. 任何剩余的"BG 队列写 viewContext"模式必须写进 follow-up 或当轮一并修
+      1. `xcodebuild` 成功
+      2. `PagedClipboardViewModel.contextDidSave` 不再无脑调用 `refreshLoadedClipboardData()`；改为读取 `userInfo` 的 inserted/updated/deleted，分别对 `previewItems` 做 patch
+      3. 复制一条新内容时 Shelf 已经打开且选中剪贴板，新条目顶端出现，老条目不闪烁、滚动位置不抖
+      4. 删除一条时该条目即时消失；其他条目不动
       证据写回：
-      - grep 结果摘要 -> task §9
-      - 不修的剩余项 -> task §0 待确认
+      - 改动文件 + 行号 -> task §9
+      - 构建命令输出摘要 -> task §8
+      - 与 task 12 的 fetch 切窄路径如何衔接（增量插入条目也走 textual + enrich 两阶段）-> task §9
 
 - [ ] **commit**
       验收方式：
-      1. `git diff --name-only --cached` 只包含本次修复明确涉及的文件 + task 文档 + AGENTS.md + 00-index.md
-      2. commit message 使用 Conventional Commits（`fix:` 前缀），中文正文说明根因和影响
+      1. `git diff --name-only --cached` 只包含本次修复涉及的文件 + task 文档 + 00-index.md
+      2. commit message 使用 Conventional Commits（`perf:` 或 `fix:` 前缀），中文正文说明根因和影响
       证据写回：
       - commit hash + 标题 -> task §8
 

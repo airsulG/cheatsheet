@@ -17,8 +17,11 @@ struct ShelfView: View {
     @State private var renamingCategory: Category? = nil
     @State private var newCategoryName: String = ""
     @State private var searchText: String = ""
-    @State private var isClipboardSelected: Bool = false // 将剪贴板作为一个"标签"
-    @State private var isFavoritesSelected: Bool = false  // 收藏标签
+    /// 上次用户选中的 tab，跨 panel 生命周期持久化。
+    /// 取值："clipboard" | "favorites" | category-uuid。第一次启动默认进剪贴板。
+    @AppStorage("shelfLastTab") private var shelfLastTabRaw: String = "clipboard"
+    private var isClipboardSelected: Bool { shelfLastTabRaw == "clipboard" }
+    private var isFavoritesSelected: Bool { shelfLastTabRaw == "favorites" }
     @State private var isSearching: Bool = false
     @State private var showingAddCategoryAlert = false  // 新增：新建分类对话框
     @State private var newAddCategoryName: String = ""  // 新增：新建分类名称
@@ -272,8 +275,13 @@ struct ShelfView: View {
         .onChange(of: searchText) { _, newValue in
             viewModel.searchText = newValue
         }
-        .onChange(of: isClipboardSelected) { _, selected in
-            if selected { viewModel.pagedClipboardVM.ensurePreviewFirstPageLoaded() }
+        .onAppear {
+            // 视图首次出现：按上次记住的 tab 立即触发对应 ViewModel 加载，
+            // 让数据加载和 panel 打开动画并行。
+            applyShelfLastTab()
+        }
+        .onChange(of: shelfLastTabRaw) { _, _ in
+            applyShelfLastTab()
         }
         .onChange(of: shelfCardSortModeRaw) { _, newValue in
             ShelfCardSortSettings.mode = ShelfCardSortMode(rawValue: newValue) ?? .manual
@@ -317,8 +325,9 @@ struct ShelfView: View {
                     viewModel.categoryVM.createCategory(name: name)
                     viewModel.categoryVM.fetchCategories()
                     if let created = viewModel.categoryVM.categories.first(where: { $0.name == name }) {
-                        isClipboardSelected = false
-                        isFavoritesSelected = false
+                        if let id = created.id?.uuidString {
+                            shelfLastTabRaw = id
+                        }
                         viewModel.selectCategory(created)
                     }
                 }
@@ -336,8 +345,7 @@ struct ShelfView: View {
                     viewModel.categoryVM.fetchCategories()
                     // 如果删除的是当前选中的分类，切换到收藏
                     if viewModel.selectedCategory?.objectID == cat.objectID {
-                        isFavoritesSelected = true
-                        isClipboardSelected = false
+                        shelfLastTabRaw = "favorites"
                         viewModel.clearSelection()
                         viewModel.fetchFavorites()
                     }
@@ -367,17 +375,16 @@ struct ShelfView: View {
                 onTap: { item in
                     switch item {
                     case .clipboard:
-                        isClipboardSelected = true
-                        isFavoritesSelected = false
+                        shelfLastTabRaw = "clipboard"
                         viewModel.clearSelection()
                     case .favorites:
-                        isFavoritesSelected = true
-                        isClipboardSelected = false
+                        shelfLastTabRaw = "favorites"
                         viewModel.clearSelection()
                         viewModel.fetchFavorites()
                     case .category(let cat):
-                        isClipboardSelected = false
-                        isFavoritesSelected = false
+                        if let id = cat.id?.uuidString {
+                            shelfLastTabRaw = id
+                        }
                         viewModel.selectCategory(cat)
                     }
                 },
@@ -533,6 +540,31 @@ struct ShelfView: View {
             .background(Capsule().fill(Color(NSColor.controlBackgroundColor)))
             .overlay(Capsule().stroke(Color(NSColor.separatorColor), lineWidth: 0.5))
             .fixedSize()
+    }
+
+    /// 把当前 `shelfLastTabRaw` 反映到 viewModel 的真实选择和数据加载上。
+    /// 在 onAppear 与 shelfLastTabRaw 变化时各调一次：让 panel 出现的同一帧
+    /// 就启动对应 tab 的数据预取，不再等用户点击。
+    private func applyShelfLastTab() {
+        switch shelfLastTabRaw {
+        case "clipboard":
+            viewModel.clearSelection()
+            viewModel.pagedClipboardVM.ensurePreviewFirstPageLoaded()
+        case "favorites":
+            viewModel.clearSelection()
+            viewModel.fetchFavorites()
+        default:
+            // 视为分类 UUID
+            if let uuid = UUID(uuidString: shelfLastTabRaw),
+               let cat = viewModel.categoryVM.categories.first(where: { $0.id == uuid }) {
+                viewModel.selectCategory(cat)
+            } else {
+                // 找不到对应分类（首次启动 / 分类被删除）→ 回退到剪贴板并写回 AppStorage
+                shelfLastTabRaw = "clipboard"
+                viewModel.clearSelection()
+                viewModel.pagedClipboardVM.ensurePreviewFirstPageLoaded()
+            }
+        }
     }
 
     private var searchScopeTitle: String {
