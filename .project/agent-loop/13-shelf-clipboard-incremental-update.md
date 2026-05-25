@@ -2,17 +2,116 @@
 
 ## 0. 当前状态
 
-- status: approved
-- phase: implementing-ready
-- role_next: karl-dev-execute
+- status: done
+- phase: implementation-complete
+- role_next: none
 - plan_review_policy: auto_approved
-- depends_on: 12-shelf-clipboard-fast-open.md
+- depends_on: 12-shelf-clipboard-fast-open.md（done）
 - parallel_safe: yes
 - execution_mode: unattended
-- current_goal: 让"复制一条新内容"的 contextDidSave 不再触发整页 reset；列表只增量插入新条目，老条目不抖
-- next_action: 实施 §3 的增量合并
+- current_goal: 复制 / 删除时只对 previewItems 做增量 patch，不再整页 reset
+- next_action: 等待 Karl 体感验收
 - blocker: none
-- updated_at: 2026-05-25 12:55
+- updated_at: 2026-05-25 13:18
+
+## 8. 执行记录
+
+### 第 1 轮（2026-05-25 13:10 - 13:14）
+
+- 改文件：
+  - `cheatsheet/Models/ViewModels/PagedClipboardViewModel.swift`：
+    - `contextDidSave(_:)` 重写为读取 `userInfo` 的 inserted/updated/deleted，
+      仅当 `previewItems` 非空时通过 `applyChanges` 增量 patch；空列表交给
+      `ensurePreviewFirstPageLoaded`。
+    - 新增 `applyChanges(insertedIDs:updatedIDs:deletedIDs:)`：
+      - 删除：`previewItems.removeAll { deletedIDs.contains($0.id) }` + `previewOffset` 修正
+      - 插入 + 更新：`predicate: SELF IN allIDs`、`propertiesToFetch` 限定文本字段、
+        在主队列按 `createdAt` 倒序找位置插入或就地替换；末尾调 `enrichBlobs`
+  - `cheatsheet/Models/ViewModels/ShelfViewModel.swift`：
+    - `contextDidSave(_:)` 不再调 `pagedClipboardVM.refreshLoadedClipboardData()`；
+      改为只关心 Category / Command / Favorites 分支（即"非 ClipboardItem"变更）。
+    - 当变更全是 ClipboardItem 时直接 return，避免 main 队列做无意义 fetch。
+
+### 第 2 轮：验证
+
+- diagnostics：两个文件 No diagnostics found
+- grep `refreshLoadedClipboardData` in cheatsheet/：
+  - 仅出现在 PagedClipboardViewModel.swift 的函数定义本身
+  - **不再出现在任何 contextDidSave 调用路径**
+- 构建：`xcodebuild ... build` → `** BUILD SUCCEEDED **`
+
+## 9. 决策和证据
+
+### 9.1 修改前后对照
+
+`PagedClipboardViewModel.contextDidSave`：
+
+修改前（task 12 完成后）：
+
+```swift
+@objc private func contextDidSave(_ notification: Notification) {
+    DispatchQueue.main.async {
+        self.refreshLoadedClipboardData()    // 每次都整页 reset
+    }
+}
+```
+
+修改后：
+
+```swift
+@objc private func contextDidSave(_ notification: Notification) {
+    let userInfo = notification.userInfo
+    let inserted = ... { $0 is ClipboardItem ? $0.objectID : nil }
+    let updated  = ... ; let deleted = ...
+    guard !(insertedIDs.isEmpty && updatedIDs.isEmpty && deletedIDs.isEmpty) else { return }
+
+    DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
+        guard !self.previewItems.isEmpty else { return }
+        self.applyChanges(insertedIDs:.., updatedIDs:.., deletedIDs:..)
+    }
+}
+```
+
+`ShelfViewModel.contextDidSave`：
+
+修改前：
+
+```swift
+if hasClipboardChanges {
+    pagedClipboardVM.refreshLoadedClipboardData()    // ★ 重复且全量
+}
+categoryVM.fetchCategories()
+fetchFavorites()
+...
+```
+
+修改后：
+
+```swift
+let hasNonClipboardChanges = allObjects.contains { !($0 is ClipboardItem) }
+guard hasNonClipboardChanges else { return }   // 全是剪贴板变更则直接 return
+DispatchQueue.main.async { [weak self] in
+    self?.categoryVM.fetchCategories()
+    ...
+}
+```
+
+### 9.2 边界与正确性
+
+- **跨线程读取**：`is ClipboardItem` 与 `objectID` 都是线程安全访问，符合 task 10 长期规则。
+- **fetchOffset 漂移**：插入路径上 `previewOffset += 1`，删除路径上 `previewOffset -= removedCount`。
+  保证 `loadNextPreviewPage` 的下一页起点仍然指向"列表底部之后"。
+- **generation 守护**：复用了 task 12 的 `previewGeneration`；如果用户期间手动触发
+  `resetPreviewAndLoadFirstPage`，旧的 applyChanges fetch 完成后会在 main.async 里被丢弃。
+- **enrichBlobs 复用**：插入条目和首屏 fetch 走相同的二阶段 blob 路径，行为一致。
+
+### 9.3 follow-up
+
+- `refreshLoadedClipboardData()` 现在是无调用方的"手动 reset 入口"。如果后续设置
+  面板要做"清空所有"或"重新加载"按钮，可以接到这里。否则下一轮可以删掉。
+- `applyChanges` 没单独走过单元测试；当前依赖人工验收。后续可以加一个 `ClipboardItem`
+  插入 → previewItems 顶端有该条目 + offset 正确的最小测试。
 
 ## 1. 目标和需求
 
@@ -215,14 +314,6 @@ private func applyChanges(insertedIDs: Set<NSManagedObjectID>,
 - [ ] 第 1 轮：实施 applyChanges + contextDidSave 重写
 - [ ] 第 2 轮：xcodebuild + grep
 - [ ] 第 3 轮：写回 + commit
-
-## 8. 执行记录
-
-待写。
-
-## 9. 决策和证据
-
-待写。
 
 ## 10. 停止条件
 

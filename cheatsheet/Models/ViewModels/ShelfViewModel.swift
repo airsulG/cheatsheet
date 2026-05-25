@@ -55,21 +55,22 @@ final class ShelfViewModel: ObservableObject {
         // 2) 自我反馈防护：忽略 viewContext 自身的 save。
         // 3) userInfo 里的 NSManagedObject 跨线程只允许做类指针判断（is ClipboardItem），不读属性。
         // 4) 所有 viewContext 访问与 @Published 写入回到主队列。
+        // 5) 剪贴板列表的增量更新由 PagedClipboardViewModel 自己监听 contextDidSave 处理（task 13），
+        //    这里只负责 Category / Command / Favorites 分支。
         guard let saved = noti.object as? NSManagedObjectContext, saved !== viewContext else { return }
 
         let userInfo = noti.userInfo
         let inserted = (userInfo?[NSInsertedObjectsKey] as? Set<NSManagedObject>) ?? []
         let updated  = (userInfo?[NSUpdatedObjectsKey]  as? Set<NSManagedObject>) ?? []
         let deleted  = (userInfo?[NSDeletedObjectsKey]  as? Set<NSManagedObject>) ?? []
-        let hasClipboardChanges = inserted.union(updated).union(deleted).contains { $0 is ClipboardItem }
+        let allObjects = inserted.union(updated).union(deleted)
+        let hasNonClipboardChanges = allObjects.contains { !($0 is ClipboardItem) }
+
+        // 完全是剪贴板变更时不用走 ShelfViewModel 这条刷新链；分类 / 命令 / 收藏没变。
+        guard hasNonClipboardChanges else { return }
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            // 只在剪贴板数据变更时刷新剪贴板列表
-            if hasClipboardChanges {
-                self.pagedClipboardVM.refreshLoadedClipboardData()
-            }
-            // 分类和收藏正常刷新
             self.categoryVM.fetchCategories()
             self.fetchFavorites()
             if let cat = self.selectedCategory {

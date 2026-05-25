@@ -93,8 +93,111 @@ final class PagedClipboardViewModel: ObservableObject {
     }
 
     @objc private func contextDidSave(_ notification: Notification) {
-        DispatchQueue.main.async {
-            self.refreshLoadedClipboardData()
+        // Selector 在「发布 save 的那个线程」上同步派发；这里很可能在后台私有队列。
+        // 跨线程仅允许读 NSManagedObject 的类指针和 objectID。
+        let userInfo = notification.userInfo
+        let inserted = (userInfo?[NSInsertedObjectsKey] as? Set<NSManagedObject>) ?? []
+        let updated  = (userInfo?[NSUpdatedObjectsKey]  as? Set<NSManagedObject>) ?? []
+        let deleted  = (userInfo?[NSDeletedObjectsKey]  as? Set<NSManagedObject>) ?? []
+
+        let insertedIDs = Set(inserted.compactMap { $0 is ClipboardItem ? $0.objectID : nil })
+        let updatedIDs  = Set(updated.compactMap  { $0 is ClipboardItem ? $0.objectID : nil })
+        let deletedIDs  = Set(deleted.compactMap  { $0 is ClipboardItem ? $0.objectID : nil })
+
+        guard !(insertedIDs.isEmpty && updatedIDs.isEmpty && deletedIDs.isEmpty) else { return }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            // 仅当列表已经被加载过才做增量；空列表交给 ensurePreviewFirstPageLoaded
+            // 在用户进入剪贴板 tab 时统一触发。
+            guard !self.previewItems.isEmpty else { return }
+            self.applyChanges(insertedIDs: insertedIDs,
+                              updatedIDs: updatedIDs,
+                              deletedIDs: deletedIDs)
+        }
+    }
+
+    /// 把 NSManagedObjectContextDidSave 的 inserted/updated/deleted 增量地反映到 previewItems。
+    /// 不再像旧实现那样整页 reset，避免每次复制都重抓 16 条 + 全量 enrichBlobs，
+    /// 也避免列表滚动位置和图片缩略图闪烁。
+    private func applyChanges(insertedIDs: Set<NSManagedObjectID>,
+                              updatedIDs: Set<NSManagedObjectID>,
+                              deletedIDs: Set<NSManagedObjectID>) {
+        // 1) 删除：直接从 previewItems 移除并修正 offset
+        if !deletedIDs.isEmpty {
+            let removedCount = previewItems.filter { deletedIDs.contains($0.id) }.count
+            if removedCount > 0 {
+                previewItems.removeAll { deletedIDs.contains($0.id) }
+                previewOffset = max(0, previewOffset - removedCount)
+            }
+        }
+
+        // 2) 插入 + 更新：把这些 ID 的文本字段抓回来
+        let allIDs = insertedIDs.union(updatedIDs)
+        guard !allIDs.isEmpty else { return }
+
+        let generation = previewGeneration
+        let maxPreviewCharacters = maxPreviewCharacters
+
+        previewContext.perform { [weak self] in
+            guard let self else { return }
+
+            let req: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
+            req.predicate = NSPredicate(format: "SELF IN %@", allIDs)
+            // 文本两阶段策略：第一阶段只取文本字段，第二阶段交给 enrichBlobs。
+            req.propertiesToFetch = ["id", "content", "type", "createdAt", "sourceBundleId", "sourceAppName"]
+            req.returnsObjectsAsFaults = true
+            req.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.createdAt, ascending: false)]
+
+            let fetched: [ClipboardItem]
+            do {
+                fetched = try self.previewContext.fetch(req)
+            } catch {
+                return
+            }
+
+            let textualPreviews: [ClipboardPreviewItem] = fetched.map { item in
+                let type = item.type ?? "text"
+                return ClipboardPreviewItem(
+                    id: item.objectID,
+                    uuid: item.id,
+                    type: type,
+                    contentPreview: Self.previewText(
+                        item.content,
+                        type: type,
+                        maxCharacters: maxPreviewCharacters
+                    ),
+                    sourceAppName: item.sourceAppName,
+                    sourceAppIconData: nil,
+                    sourceAppIconCacheKey: nil,
+                    imageData: nil,
+                    createdAt: item.createdAt
+                )
+            }
+
+            DispatchQueue.main.async {
+                guard generation == self.previewGeneration else { return }
+                guard !textualPreviews.isEmpty else { return }
+
+                for preview in textualPreviews {
+                    if let idx = self.previewItems.firstIndex(where: { $0.id == preview.id }) {
+                        // updated：原地替换文本字段。blob 字段会在下面 enrichBlobs 重新填回。
+                        self.previewItems[idx] = preview
+                    } else {
+                        // inserted：按 createdAt 倒序找到合适插入位置；
+                        // ClipboardItem 默认排序就是 createdAt 倒序，新增条目通常顶端插入。
+                        let insertAt = self.previewItems.firstIndex(where: {
+                            ($0.createdAt ?? .distantPast) < (preview.createdAt ?? .distantPast)
+                        }) ?? self.previewItems.count
+                        self.previewItems.insert(preview, at: insertAt)
+                        self.previewOffset += 1
+                    }
+                }
+
+                // 第二阶段：异步补 blob，复用 task 12 的 enrichBlobs 路径。
+                self.enrichBlobs(forItemsWithIDs: textualPreviews.map { $0.id },
+                                 generation: generation)
+            }
         }
     }
 
