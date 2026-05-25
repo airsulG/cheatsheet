@@ -33,15 +33,16 @@ class ClipboardHistoryViewModel: ObservableObject {
     }
     
     @objc private func contextDidSave(_ notification: Notification) {
-        // We only care about saves from a background context that get merged to the main
+        // selector 在「发布 save 的那个线程」上同步派发。后台 context 的 save 会让这里跑在
+        // 私有队列，跨线程触碰 viewContext 会和 automaticallyMergesChangesFromParent 自动合并
+        // 撞拍。修法是只在主队列做 fetch，并且不再手动 mergeChanges——auto-merge 已经接管了。
         guard let context = notification.object as? NSManagedObjectContext,
-              context != viewContext else {
+              context !== viewContext else {
             return
         }
-        
-        viewContext.perform {
-            self.viewContext.mergeChanges(fromContextDidSave: notification)
-            self.fetchItems() // Re-fetch to update the UI
+
+        DispatchQueue.main.async { [weak self] in
+            self?.fetchItems()
         }
     }
     
