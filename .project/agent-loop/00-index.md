@@ -18,20 +18,21 @@ last_active_task: 10-coredata-crash-mainqueue-merge.md
 | `07-shelf-sort-toggle-and-source-app.md` | 底部横条排序入口和剪贴板来源 App 展示 | done；已改成文字切换排序按钮，并恢复剪贴板来源 App 图标和名称，构建通过 |
 | `08-shelf-resizable-height.md` | 底部横条上边缘拖拽调高和长内容预览 | done；已增加面板高度持久化、顶部拖拽热区和随高度增长的卡片内容预览，构建通过 |
 | `09-shelf-open-animation-smoothness.md` | 底部横条快捷键打开动画卡顿 | done；已将打开/关闭从高度动画改为固定高度位移动画，并减少打开期间重复解码和二次动画，构建通过 |
-| `10-coredata-crash-mainqueue-merge.md` | 长跑后 NSInvalidArgumentException 在 `_postRefreshedObjectsNotificationAndClearList` 路径上崩溃 | done；ShelfViewModel/ClipboardHistoryViewModel 的 contextDidSave 改为 main 队列 fetch，移除手动 mergeChanges；xcodebuild 通过 |
+| `10-coredata-crash-mainqueue-merge.md` | 长跑后 NSInvalidArgumentException 在 `_postRefreshedObjectsNotificationAndClearList` 路径上崩溃 | done；ShelfViewModel/ClipboardHistoryViewModel 的 contextDidSave 改为 main 队列 fetch，移除手动 mergeChanges；xcodebuild 通过；commit 45a82b5 |
+| `11-shelf-clipboard-icon-and-image-preview.md` | 底部横条剪贴板卡片不再显示来源 App 图标和图片预览 | done；ClipboardPreviewItem 新增 imageData，maxSourceAppIconBytes 放宽到 512KB，ShelfCard image case 真渲染；xcodebuild 通过 |
 
 ## 任务状态字段
 
 ```text
-任务：10-coredata-crash-mainqueue-merge.md
+任务：11-shelf-clipboard-icon-and-image-preview.md
 status: done
 phase: implementation-complete
 role_next: none
 plan_review_policy: auto_approved
-depends_on: none
-parallel_safe: no
-current_goal: 让 viewContext.automaticallyMergesChangesFromParent 独占主队列合并；ShelfViewModel/ClipboardHistoryViewModel 仅在主队列上 fetch 与写 @Published
-next_action: 等待 Karl 长跑验收（30 分钟高频复制粘贴）
+depends_on: 10-coredata-crash-mainqueue-merge.md（done）
+parallel_safe: yes
+current_goal: ClipboardPreviewItem 携带 image 字节、放宽源 App 图标阈值、ShelfCard image case 真渲染
+next_action: 等待 Karl 视觉验收
 blocker: none
-updated_at: 2026-05-25 12:34
+updated_at: 2026-05-25 12:42
 ```

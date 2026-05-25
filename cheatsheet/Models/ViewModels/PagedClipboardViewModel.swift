@@ -11,19 +11,61 @@ import CoreData
 import AppKit
 #endif
 
+struct ClipboardPreviewItem: Identifiable, Equatable {
+    let id: NSManagedObjectID
+    let uuid: UUID?
+    let type: String
+    let contentPreview: String
+    let sourceAppName: String?
+    let sourceAppIconData: Data?
+    let sourceAppIconCacheKey: String?
+    /// 仅当 type == "image" 且字节 ≤ maxImagePreviewBytes 时携带 PNG 字节，
+    /// 用于 ShelfCard 渲染缩略；否则为 nil 由视图回退到占位文本。
+    let imageData: Data?
+    let createdAt: Date?
+
+    var isTextLike: Bool {
+        switch type {
+        case "image", "file":
+            return false
+        default:
+            return true
+        }
+    }
+}
+
 final class PagedClipboardViewModel: ObservableObject {
     private let viewContext: NSManagedObjectContext
+    private let previewContext: NSManagedObjectContext
 
     @Published var items: [ClipboardItem] = []
+    @Published var previewItems: [ClipboardPreviewItem] = []
     @Published var isLoading: Bool = false
+    @Published var isPreviewLoading: Bool = false
     @Published var hasMore: Bool = true
+    @Published var hasMorePreview: Bool = true
     @Published var errorMessage: String?
 
     var pageSize: Int = 30
+    var previewPageSize: Int = 16
     private var offset: Int = 0
+    private var previewOffset: Int = 0
+    private var previewGeneration: Int = 0
+    private let maxPreviewCharacters = 2_000
+    /// 写入端 NSWorkspace 序列化的 macOS App 图标 PNG 普遍 130KB ~ 200KB（多分辨率位图），
+    /// 旧值 64KB 会把全部图标裁断成 nil。512KB 提供 2.5× 余量，能挡住极端异常值。
+    private let maxSourceAppIconBytes = 512 * 1024
+    /// image 类型条目缩略的字节上限。当前预览面板一次最多 16 条，
+    /// 16 × 2MB = 32MB 量级可控；超过时回退到 <image> 文本占位。
+    private let maxImagePreviewBytes = 2 * 1024 * 1024
 
     init(context: NSManagedObjectContext) {
         self.viewContext = context
+        let previewContext = NSManagedObjectContext(concurrencyType: .privateQueueConcurrencyType)
+        previewContext.persistentStoreCoordinator = context.persistentStoreCoordinator
+        previewContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+        previewContext.automaticallyMergesChangesFromParent = true
+        self.previewContext = previewContext
 
         NotificationCenter.default.addObserver(
             self,
@@ -34,8 +76,9 @@ final class PagedClipboardViewModel: ObservableObject {
     }
 
     @objc private func contextDidSave(_ notification: Notification) {
-        // 新数据写入时，仅重置第一页，避免一次性加载全部
-        resetAndLoadFirstPage()
+        DispatchQueue.main.async {
+            self.refreshLoadedClipboardData()
+        }
     }
 
     func resetAndLoadFirstPage() {
@@ -47,6 +90,140 @@ final class PagedClipboardViewModel: ObservableObject {
 
     func ensureFirstPageLoaded() {
         if items.isEmpty { resetAndLoadFirstPage() }
+    }
+
+    func refreshLoadedClipboardData() {
+        if !items.isEmpty {
+            resetAndLoadFirstPage()
+        }
+
+        if !previewItems.isEmpty {
+            resetPreviewAndLoadFirstPage()
+        }
+    }
+
+    func resetPreviewAndLoadFirstPage() {
+        previewGeneration += 1
+        previewItems.removeAll()
+        previewOffset = 0
+        hasMorePreview = true
+        isPreviewLoading = false
+        loadNextPreviewPage()
+    }
+
+    func ensurePreviewFirstPageLoaded() {
+        if previewItems.isEmpty {
+            resetPreviewAndLoadFirstPage()
+        }
+    }
+
+    func loadNextPreviewPageIfNeeded(currentItem: ClipboardPreviewItem) {
+        guard let index = previewItems.firstIndex(where: { $0.id == currentItem.id }) else { return }
+        let threshold = max(previewItems.count - 4, 0)
+        if index >= threshold {
+            loadNextPreviewPage()
+        }
+    }
+
+    func filteredPreviewItems(matching query: String) -> [ClipboardPreviewItem] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return previewItems }
+        return previewItems.filter { item in
+            item.type.localizedCaseInsensitiveContains(q) ||
+            item.contentPreview.localizedCaseInsensitiveContains(q) ||
+            (item.sourceAppName ?? "").localizedCaseInsensitiveContains(q)
+        }
+    }
+
+    func loadNextPreviewPage() {
+        guard !isPreviewLoading, hasMorePreview else { return }
+
+        isPreviewLoading = true
+        errorMessage = nil
+
+        let generation = previewGeneration
+        let offset = previewOffset
+        let limit = previewPageSize
+        let maxPreviewCharacters = maxPreviewCharacters
+        let maxSourceAppIconBytes = maxSourceAppIconBytes
+        let maxImagePreviewBytes = maxImagePreviewBytes
+
+        previewContext.perform { [weak self] in
+            guard let self else { return }
+
+            let request: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
+            request.sortDescriptors = [NSSortDescriptor(keyPath: \ClipboardItem.createdAt, ascending: false)]
+            request.fetchOffset = offset
+            request.fetchLimit = limit
+            request.fetchBatchSize = limit
+            request.relationshipKeyPathsForPrefetching = []
+            request.returnsObjectsAsFaults = false
+
+            do {
+                let page = try self.previewContext.fetch(request)
+                let previews = page.map { item in
+                    let type = item.type ?? "text"
+                    let iconData = Self.cappedSourceAppIconData(
+                        item.sourceAppIcon,
+                        maxBytes: maxSourceAppIconBytes
+                    )
+                    let imageData: Data? = (type == "image")
+                        ? Self.cappedImageData(item.data, maxBytes: maxImagePreviewBytes)
+                        : nil
+                    return ClipboardPreviewItem(
+                        id: item.objectID,
+                        uuid: item.id,
+                        type: type,
+                        contentPreview: Self.previewText(
+                            item.content,
+                            type: type,
+                            maxCharacters: maxPreviewCharacters
+                        ),
+                        sourceAppName: item.sourceAppName,
+                        sourceAppIconData: iconData,
+                        sourceAppIconCacheKey: Self.sourceAppIconCacheKey(for: iconData),
+                        imageData: imageData,
+                        createdAt: item.createdAt
+                    )
+                }
+
+                DispatchQueue.main.async {
+                    guard generation == self.previewGeneration else { return }
+                    self.previewItems.append(contentsOf: previews)
+                    self.previewOffset += previews.count
+                    self.hasMorePreview = previews.count == limit
+                    self.isPreviewLoading = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    guard generation == self.previewGeneration else { return }
+                    self.errorMessage = "加载剪贴板失败: \(error.localizedDescription)"
+                    self.isPreviewLoading = false
+                    self.hasMorePreview = false
+                }
+            }
+        }
+    }
+
+    private static func cappedSourceAppIconData(_ data: Data?, maxBytes: Int) -> Data? {
+        guard let data, data.count <= maxBytes else { return nil }
+        return data
+    }
+
+    private static func cappedImageData(_ data: Data?, maxBytes: Int) -> Data? {
+        guard let data, data.count <= maxBytes else { return nil }
+        return data
+    }
+
+    private static func sourceAppIconCacheKey(for data: Data?) -> String? {
+        guard let data else { return nil }
+
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in data {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        return "\(data.count)-\(hash)"
     }
 
     func loadNextPage() {
@@ -133,6 +310,19 @@ final class PagedClipboardViewModel: ObservableObject {
         #endif
     }
 
+    @discardableResult
+    func copyPreviewItem(_ item: ClipboardPreviewItem) -> Bool {
+        var result = false
+        viewContext.performAndWait {
+            guard let clipboardItem = try? viewContext.existingObject(with: item.id) as? ClipboardItem else {
+                result = false
+                return
+            }
+            result = copyItem(clipboardItem)
+        }
+        return result
+    }
+
     func deleteItem(_ item: ClipboardItem) {
         viewContext.perform {
             self.viewContext.delete(item)
@@ -140,6 +330,27 @@ final class PagedClipboardViewModel: ObservableObject {
                 try self.viewContext.save()
                 DispatchQueue.main.async {
                     self.items.removeAll { $0.objectID == item.objectID }
+                    self.previewItems.removeAll { $0.id == item.objectID }
+                }
+            } catch {
+                DispatchQueue.main.async { self.errorMessage = "删除失败: \(error.localizedDescription)" }
+            }
+        }
+    }
+
+    func deletePreviewItem(_ item: ClipboardPreviewItem) {
+        viewContext.perform {
+            guard let clipboardItem = try? self.viewContext.existingObject(with: item.id) as? ClipboardItem else {
+                DispatchQueue.main.async { self.previewItems.removeAll { $0.id == item.id } }
+                return
+            }
+
+            self.viewContext.delete(clipboardItem)
+            do {
+                try self.viewContext.save()
+                DispatchQueue.main.async {
+                    self.previewItems.removeAll { $0.id == item.id }
+                    self.items.removeAll { $0.objectID == item.id }
                 }
             } catch {
                 DispatchQueue.main.async { self.errorMessage = "删除失败: \(error.localizedDescription)" }
@@ -251,5 +462,25 @@ final class PagedClipboardViewModel: ObservableObject {
                 DispatchQueue.main.async { completion(0) }
             }
         }
+    }
+
+    private static func previewText(_ content: String?, type: String, maxCharacters: Int) -> String {
+        switch type {
+        case "image":
+            return "<image>"
+        case "file":
+            return fileName(from: content)
+        default:
+            let normalized = (content ?? "")
+                .replacingOccurrences(of: "\r\n", with: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard normalized.count > maxCharacters else { return normalized }
+            return String(normalized.prefix(maxCharacters)) + "…"
+        }
+    }
+
+    private static func fileName(from content: String?) -> String {
+        guard let content, let url = URL(string: content) else { return content ?? "<file>" }
+        return url.lastPathComponent
     }
 }

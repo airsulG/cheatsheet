@@ -24,12 +24,14 @@ struct ShelfView: View {
     @State private var newAddCategoryName: String = ""  // 新增：新建分类名称
     @State private var showingDeleteCategoryAlert = false  // 新增：删除分类确认
     @State private var deletingCategory: Category? = nil   // 新增：待删除的分类
+    @AppStorage(ShelfCardSortSettings.storageKey) private var shelfCardSortModeRaw: String = ShelfCardSortMode.manual.rawValue
 
     private let cardSpacing: CGFloat = 12
     @StateObject private var dragState = ShelfDragState.shared
     @StateObject private var tabDragState = ShelfTabDragState.shared
-    @State private var appeared = false
+    @State private var shelfResizeStartHeight: CGFloat?
     @Namespace private var glassNS
+    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         // 方案 1：整片矩形玻璃由外层容器统一承担；根据辅助功能判断降级
@@ -55,11 +57,11 @@ struct ShelfView: View {
 
                 // 卡片区域（横向滚动）
                 GeometryReader { proxy in
-                    // 高度策略：最小 180，最大 380，底部保留 12pt 呼吸感
+                    // 高度策略：跟随面板高度增长，底部保留 12pt 呼吸感。
                     let paddingV: CGFloat = 8
                     let bottomGutter: CGFloat = 12
                     let cardMinHeight: CGFloat = 180
-                    let cardMaxHeight: CGFloat = 380
+                    let cardMaxHeight: CGFloat = ShelfPanelHeightSettings.maxHeight - 92
 
                     let available = max(cardMinHeight, proxy.size.height - paddingV)
                     let cardHeight = min(max(available - bottomGutter, cardMinHeight), cardMaxHeight)
@@ -70,15 +72,14 @@ struct ShelfView: View {
                                 if isClipboardSelected {
                                     // 剪贴板（行容器顶对齐，且不拉升高度）
                                     LazyHStack(alignment: .top, spacing: cardSpacing) {
-                                        ForEach(viewModel.pagedClipboardVM.items.filter { item in
-                                            let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-                                            guard !q.isEmpty else { return true }
-                                            let type = item.type ?? ""
-                                            let content = item.content ?? ""
-                                            return type.localizedCaseInsensitiveContains(q) || content.localizedCaseInsensitiveContains(q)
-                                        }, id: \.id) { item in
+                                        if viewModel.pagedClipboardVM.previewItems.isEmpty,
+                                           viewModel.pagedClipboardVM.isPreviewLoading {
+                                            clipboardLoadingCard(cardHeight: cardHeight)
+                                        }
+
+                                        ForEach(viewModel.pagedClipboardVM.filteredPreviewItems(matching: searchText)) { item in
                                             ClipboardShelfCard(item: item, cardHeight: cardHeight) {
-                                                let success = viewModel.pagedClipboardVM.copyItem(item)
+                                                let success = viewModel.pagedClipboardVM.copyPreviewItem(item)
                                                 if success {
                                                     viewModel.showCopyToast = true
                                                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) { viewModel.showCopyToast = false }
@@ -86,13 +87,16 @@ struct ShelfView: View {
                                                 // 复制后自动关闭横条窗口
                                                 ShelfWindowController.shared.hide()
                                             } onDelete: {
-                                                viewModel.pagedClipboardVM.deleteItem(item)
+                                                viewModel.pagedClipboardVM.deletePreviewItem(item)
                                             }
                                             .onAppear {
-                                                if item.objectID == viewModel.pagedClipboardVM.items.last?.objectID {
-                                                    viewModel.pagedClipboardVM.loadNextPage()
-                                                }
+                                                viewModel.pagedClipboardVM.loadNextPreviewPageIfNeeded(currentItem: item)
                                             }
+                                        }
+
+                                        if !viewModel.pagedClipboardVM.previewItems.isEmpty,
+                                           viewModel.pagedClipboardVM.isPreviewLoading {
+                                            clipboardLoadingCard(cardHeight: cardHeight)
                                         }
                                     }
                                 } else if isFavoritesSelected {
@@ -103,10 +107,11 @@ struct ShelfView: View {
                                             items: viewModel.favorites,
                                             id: \.id,
                                             spacing: cardSpacing,
+                                            allowsReordering: currentSortMode == .manual,
                                             content: { cmd in
                                                 ShelfCardView(
                                                     title: cmd.name ?? "",
-                                                    subtitle: adaptiveSubtitle(from: cmd.content ?? ""),
+                                                    subtitle: adaptiveSubtitle(from: cmd.content ?? "", cardHeight: cardHeight),
                                                     onTap: {
                                                         viewModel.commandVM.copyCommand(cmd)
                                                         if viewModel.commandVM.showCopyToast { viewModel.showToast() }
@@ -132,8 +137,8 @@ struct ShelfView: View {
                                                     }
                                                 )
                                             },
-                                            onMove: { from, to in
-                                                viewModel.moveFavorite(from: from, to: to)
+                                            onSwap: { from, to in
+                                                viewModel.swapFavoritePositions(from: from, to: to)
                                             }
                                         )
                                     } else {
@@ -144,7 +149,7 @@ struct ShelfView: View {
                                             }, id: \.id) { cmd in
                                                 ShelfCardView(
                                                     title: cmd.name ?? "",
-                                                    subtitle: adaptiveSubtitle(from: cmd.content ?? ""),
+                                                    subtitle: adaptiveSubtitle(from: cmd.content ?? "", cardHeight: cardHeight),
                                                     onTap: {
                                                         viewModel.commandVM.copyCommand(cmd)
                                                         if viewModel.commandVM.showCopyToast { viewModel.showToast() }
@@ -174,10 +179,11 @@ struct ShelfView: View {
                                                 items: viewModel.commandVM.commands,
                                                 id: \.id,
                                                 spacing: cardSpacing,
+                                                allowsReordering: currentSortMode == .manual,
                                                 content: { cmd in
                                                     ShelfCardView(
                                                         title: cmd.name ?? "",
-                                                        subtitle: adaptiveSubtitle(from: cmd.content ?? ""),
+                                                        subtitle: adaptiveSubtitle(from: cmd.content ?? "", cardHeight: cardHeight),
                                                         onTap: {
                                                             viewModel.commandVM.copyCommand(cmd)
                                                             if viewModel.commandVM.showCopyToast { viewModel.showToast() }
@@ -197,8 +203,8 @@ struct ShelfView: View {
                                                         }
                                                     )
                                                 },
-                                                onMove: { from, to in
-                                                    viewModel.commandVM.moveCommand(from: from, to: to)
+                                                onSwap: { from, to in
+                                                    viewModel.commandVM.swapCommandPositions(from: from, to: to)
                                                 }
                                             )
                                             // 新建命令卡片（标题/正文为空白）置于最右侧
@@ -214,7 +220,7 @@ struct ShelfView: View {
                                                 ForEach(viewModel.filteredCommands, id: \.id) { cmd in
                                                     ShelfCardView(
                                                         title: cmd.name ?? "",
-                                                        subtitle: adaptiveSubtitle(from: cmd.content ?? ""),
+                                                        subtitle: adaptiveSubtitle(from: cmd.content ?? "", cardHeight: cardHeight),
                                                         onTap: {
                                                             viewModel.commandVM.copyCommand(cmd)
                                                             if viewModel.commandVM.showCopyToast { viewModel.showToast() }
@@ -246,14 +252,11 @@ struct ShelfView: View {
                 .padding(.horizontal, 12)
                 .padding(.top, 4)
                 .padding(.bottom, 4)
-                .offset(y: appeared ? 0 : 20)
-                .opacity(appeared ? 1 : 0)
-                .animation(.interpolatingSpring(stiffness: 220, damping: 22), value: appeared)
             }
         }
         // 方案 1：把整条横栏（ZStack）矩形玻璃化（macOS 26+ 才启用）
         .glassEffectRectCompat(shouldReduceTransparency: shouldReduceTransparency)
-        .frame(minHeight: 300) // 默认高度 300
+        .frame(minHeight: ShelfPanelHeightSettings.minHeight)
         .overlay(
             // 顶部柔和阴影，增强与桌面边界的层次感
             VStack(spacing: 0) {
@@ -261,15 +264,28 @@ struct ShelfView: View {
                 Rectangle().fill(Color.black.opacity(0.06)).frame(height: 0.5)
                 Spacer()
             }
+            .allowsHitTesting(false)
         )
+        .overlay(alignment: .top) {
+            shelfResizeHandle
+        }
         .onChange(of: searchText) { _, newValue in
             viewModel.searchText = newValue
         }
         .onChange(of: isClipboardSelected) { _, selected in
-            if selected { viewModel.pagedClipboardVM.ensureFirstPageLoaded() }
+            if selected { viewModel.pagedClipboardVM.ensurePreviewFirstPageLoaded() }
         }
-        .onAppear { appeared = true }
-        .onDisappear { appeared = false }
+        .onChange(of: shelfCardSortModeRaw) { _, newValue in
+            ShelfCardSortSettings.mode = ShelfCardSortMode(rawValue: newValue) ?? .manual
+            viewModel.applyShelfSortMode()
+        }
+        .onExitCommand {
+            if isSearching {
+                closeSearch()
+            } else {
+                ShelfWindowController.shared.hide()
+            }
+        }
         .overlay(
             Group {
                 if viewModel.showCopyToast || viewModel.commandVM.showCopyToast {
@@ -386,10 +402,7 @@ struct ShelfView: View {
                 showingAddCategoryAlert = true
                 newAddCategoryName = ""  // 清空输入
             } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .bold))
-                    .padding(6)
-                    .background(Circle().stroke(Color(NSColor.separatorColor), lineWidth: 1))
+                toolbarIcon("plus")
             }
             .buttonStyle(.plain)
 
@@ -399,33 +412,31 @@ struct ShelfView: View {
             if isSearching {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass").foregroundColor(.secondary)
-                    TextField(isClipboardSelected ? "搜索剪贴板（文本/链接）" : (isFavoritesSelected ? "搜索收藏（名称/内容）" : "搜索命令（名称/内容)"), text: $searchText)
+                    searchScopeChip
+                    TextField(searchPlaceholder, text: $searchText)
                         .textFieldStyle(.plain)
+                        .focused($isSearchFocused)
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            isSearching = false
-                            searchText = ""
-                            viewModel.searchText = ""
-                        }
+                        closeSearch()
                     } label: {
                         Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
                     }
                     .buttonStyle(.borderless)
+                    .keyboardShortcut(.cancelAction)
                 }
                 .padding(8)
-                .frame(width: 260)
+                .frame(width: 320)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.textBackgroundColor)))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(NSColor.separatorColor), lineWidth: 1))
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             } else {
                 HStack(spacing: 8) {
+                    sortToggleButton
+
                     Button {
                         BackupWindowController.shared.present(context: viewModel.viewContext)
                     } label: {
-                        Image(systemName: "externaldrive.badge.timemachine")
-                            .font(.system(size: 14, weight: .regular))
-                            .padding(8)
-                            .background(Circle().fill(Color(NSColor.controlBackgroundColor)))
+                        toolbarIcon("externaldrive.badge.timemachine")
                     }
                     .buttonStyle(.plain)
                     .help("备份与恢复")
@@ -435,24 +446,19 @@ struct ShelfView: View {
                         Button {
                             ClipboardSettingsWindowController.shared.present(viewModel: viewModel.pagedClipboardVM)
                         } label: {
-                            Image(systemName: "gearshape")
-                                .font(.system(size: 14, weight: .regular))
-                                .padding(8)
-                                .background(Circle().fill(Color(NSColor.controlBackgroundColor)))
+                            toolbarIcon("gearshape")
                         }
                         .buttonStyle(.plain)
                         .help("剪贴板设置")
                     }
 
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) { isSearching = true }
+                        openSearch()
                     } label: {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 14, weight: .regular))
-                            .padding(8)
-                            .background(Circle().fill(Color(NSColor.controlBackgroundColor)))
+                        toolbarIcon("magnifyingglass")
                     }
                     .buttonStyle(.plain)
+                    .keyboardShortcut("f", modifiers: [.command])
 
                     // 品牌徽章：仅在搜索未展开时显示，避免与标签条重叠
                     brandBadge
@@ -461,6 +467,144 @@ struct ShelfView: View {
         }
     }
 
+    private var shelfResizeHandle: some View {
+        VStack(spacing: 2) {
+            Capsule()
+                .fill(Color.secondary.opacity(0.42))
+                .frame(width: 48, height: 4)
+                .padding(.top, 2)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 10)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 1)
+                .onChanged { value in
+                    let startHeight = shelfResizeStartHeight ?? ShelfWindowController.shared.currentHeight()
+                    if shelfResizeStartHeight == nil {
+                        shelfResizeStartHeight = startHeight
+                    }
+                    ShelfWindowController.shared.resizeFromTopDrag(
+                        startHeight: startHeight,
+                        translationY: value.translation.height,
+                        persist: false
+                    )
+                }
+                .onEnded { value in
+                    let startHeight = shelfResizeStartHeight ?? ShelfWindowController.shared.currentHeight()
+                    ShelfWindowController.shared.resizeFromTopDrag(
+                        startHeight: startHeight,
+                        translationY: value.translation.height,
+                        persist: true
+                    )
+                    shelfResizeStartHeight = nil
+                }
+        )
+        .help("拖拽调整面板高度")
+    }
+
+    private func clipboardLoadingCard(cardHeight: CGFloat) -> some View {
+        CardContainer(containerHeight: cardHeight) {
+            HStack(spacing: 6) {
+                Text("加载中")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+        } content: {
+            VStack(spacing: 10) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("正在加载剪贴板")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var searchScopeChip: some View {
+        Text(searchScopeTitle)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(Color(NSColor.controlBackgroundColor)))
+            .overlay(Capsule().stroke(Color(NSColor.separatorColor), lineWidth: 0.5))
+            .fixedSize()
+    }
+
+    private var searchScopeTitle: String {
+        if isClipboardSelected { return "剪贴板" }
+        if isFavoritesSelected { return "收藏" }
+        return viewModel.selectedCategory?.name ?? "命令"
+    }
+
+    private var searchPlaceholder: String {
+        if isClipboardSelected { return "搜索文本或链接" }
+        if isFavoritesSelected { return "搜索名称或内容" }
+        return "搜索名称或内容"
+    }
+
+    private func openSearch() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            isSearching = true
+        }
+        DispatchQueue.main.async {
+            isSearchFocused = true
+        }
+    }
+
+    private func closeSearch() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            isSearching = false
+            searchText = ""
+            viewModel.searchText = ""
+            isSearchFocused = false
+        }
+    }
+
+}
+
+private extension ShelfView {
+    func toolbarIcon(_ systemName: String) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 12, weight: .bold))
+            .foregroundColor(.primary)
+            .padding(6)
+            .background(Circle().stroke(Color(NSColor.separatorColor), lineWidth: 1))
+            .contentShape(Circle())
+    }
+
+    var currentSortMode: ShelfCardSortMode {
+        ShelfCardSortMode(rawValue: shelfCardSortModeRaw) ?? .manual
+    }
+
+    var nextSortMode: ShelfCardSortMode {
+        currentSortMode == .manual ? .title : .manual
+    }
+
+    var sortToggleButton: some View {
+        Button {
+            toggleShelfSortMode()
+        } label: {
+            Text(currentSortMode.label)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.primary)
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Capsule().stroke(Color(NSColor.separatorColor), lineWidth: 1))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("点击切换为\(nextSortMode.label)")
+    }
+
+    func toggleShelfSortMode() {
+        shelfCardSortModeRaw = nextSortMode.rawValue
+    }
 }
 
 // MARK: - 品牌徽章（位于 headerBar 右侧，避免与标签条重叠）
@@ -515,72 +659,74 @@ private struct AddCommandCard: View {
 
 // MARK: - 剪贴板卡片
 
+private final class SourceAppIconCache {
+    static let shared = SourceAppIconCache()
+
+    private let cache = NSCache<NSString, NSImage>()
+
+    private init() {}
+
+    func image(for data: Data?, cacheKey: String?) -> NSImage? {
+        guard let data, let cacheKey else { return nil }
+
+        let key = cacheKey as NSString
+        if let image = cache.object(forKey: key) {
+            return image
+        }
+
+        guard let image = NSImage(data: data) else { return nil }
+        cache.setObject(image, forKey: key)
+        return image
+    }
+}
+
 private struct ClipboardShelfCard: View {
-    let item: ClipboardItem
+    let item: ClipboardPreviewItem
     let cardHeight: CGFloat
     let onCopy: () -> Void
     let onDelete: () -> Void
 
-    // 🟢 优化4：虚拟化滚动 - 延迟加载大数据
-    @State private var isDataLoaded = false
-
     var body: some View {
         CardContainer(containerHeight: cardHeight) {
-            // Header：类型胶囊 + 来源应用名（如有）
+            // Header：来源 App + 类型
             HStack(spacing: 6) {
-                typeChip
+                sourceAppIconView
                 if let name = item.sourceAppName, !name.isEmpty {
                     Text(name)
                         .font(.caption2)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
+                        .truncationMode(.tail)
                 }
                 Spacer()
+                typeChip
             }
         } content: {
             ZStack(alignment: .bottomTrailing) {
                 // 内容层
-                if isDataLoaded {
-                    // 🟢 只有可见时才渲染包含大数据的内容
-                    switch item.type ?? "text" {
-                    case "image":
-                        if let data = item.data, let img = NSImage(data: data) {
-                            Image(nsImage: img)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .clipped()
-                        } else {
-                            placeholder("<image>")
-                        }
-                    case "file":
-                        HStack(alignment: .center, spacing: 10) {
-                            if let data = item.data, let icon = NSImage(data: data) {
-                                Image(nsImage: icon)
-                                    .resizable()
-                                    .frame(width: 40, height: 40)
-                            }
-                            Text(fileName(from: item.content))
-                                .font(.system(size: 13, weight: .medium))
-                                .lineLimit(2)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    case "html":
-                        textPreview(item.content ?? "<html>")
-                    case "rtf":
-                        textPreview(item.content ?? "<rtf>")
-                    case "url":
-                        textPreview(item.content ?? "")
-                    default:
-                        textPreview(item.content ?? "")
+                switch item.type {
+                case "image":
+                    if let data = item.imageData, let img = NSImage(data: data) {
+                        Image(nsImage: img)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        placeholder("<image>")
                     }
-
-                    // 右下角来源图标（如有）
-                    appIconView
-                } else {
-                    // 🟢 未加载时显示占位内容（仅文本预览）
-                    textPreview(item.content ?? "")
+                case "file":
+                    HStack(alignment: .center, spacing: 10) {
+                        Image(systemName: "doc")
+                            .font(.system(size: 32, weight: .regular))
+                            .foregroundColor(.secondary)
+                        Text(item.contentPreview)
+                            .font(.system(size: 13, weight: .medium))
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                default:
+                    textPreview(item.contentPreview)
                 }
             }
         }
@@ -589,45 +735,25 @@ private struct ClipboardShelfCard: View {
             Button("删除", role: .destructive) { onDelete() }
         }
         .onTapGesture { onCopy() }
-        .onAppear {
-            // 🟢 优化4：卡片出现在视野时才加载大数据
-            if !isDataLoaded {
-                // 延迟一点加载，避免滚动时卡顿
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    isDataLoaded = true
-                    // 触发 CoreData fault 加载 data 和 sourceAppIcon
-                    _ = item.data
-                    _ = item.sourceAppIcon
-                }
-            }
-        }
     }
-
-    private var appIconView: some View {
-        Group {
-            if let iconData = item.sourceAppIcon, let icon = NSImage(data: iconData) {
-                Image(nsImage: icon)
-                    .resizable()
-                    .interpolation(.high)
-                    .antialiased(true)
-                    .frame(width: 48, height: 48)
-                    .padding(8)    // 保留边距，避免贴边，仅显示图标
-            }
-        }
-    }
-
-    private func isTextBased() -> Bool { (item.type ?? "text") != "image" }
 
     private func textPreview(_ text: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(text)
                 .font(.system(.body, design: .monospaced))
                 .foregroundColor(.primary)
-                .lineLimit(nil)
+                .lineLimit(textPreviewLineLimit)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var textPreviewLineLimit: Int {
+        let contentHeight = max(0, cardHeight - 54)
+        let estimatedLineHeight: CGFloat = 18
+        let lines = Int(contentHeight / estimatedLineHeight)
+        return min(max(lines, 10), 34)
     }
 
     private func placeholder(_ title: String) -> some View {
@@ -639,15 +765,29 @@ private struct ClipboardShelfCard: View {
         .frame(width: 260, height: cardHeight)
     }
 
-    private func fileName(from content: String?) -> String {
-        guard let s = content, let url = URL(string: s) else { return content ?? "<file>" }
-        return url.lastPathComponent
-    }
-
     // MARK: - Header 辅助视图
 
+    private var sourceAppIconView: some View {
+        Group {
+            if let image = SourceAppIconCache.shared.image(
+                for: item.sourceAppIconData,
+                cacheKey: item.sourceAppIconCacheKey
+            ) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .cornerRadius(3)
+            } else {
+                Image(systemName: "app.dashed")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(width: 16, height: 16)
+    }
+
     private var typeChip: some View {
-        let label = typeDisplayName(item.type ?? "text")
+        let label = typeDisplayName(item.type)
         return Text(label)
             .font(.system(size: 11, weight: .medium))
             .foregroundColor(.primary)
@@ -753,8 +893,13 @@ private extension ShelfView {
 
 // MARK: - 自适应摘要（按字符数与输入行数，尽量在空白/标点处截断）
 private func adaptiveSubtitle(from content: String,
-                              targetChars: Int = 160,
-                              maxLines: Int = 4) -> String {
+                              cardHeight: CGFloat,
+                              baseChars: Int = 160,
+                              baseLines: Int = 4) -> String {
+    let extraHeight = max(0, cardHeight - 180)
+    let targetChars = min(1_200, baseChars + Int(extraHeight * 3.2))
+    let maxLines = min(24, baseLines + Int(extraHeight / 28))
+
     let lines = content
         .replacingOccurrences(of: "\r\n", with: "\n")
         .components(separatedBy: .newlines)
