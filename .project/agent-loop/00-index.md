@@ -1,10 +1,13 @@
 # Agent Loop 任务索引
 
-当前执行模式：unattended
-execution_mode: unattended
+当前执行模式：interactive
+execution_mode: interactive
 unattended_started_at: 2026-05-25 12:35
+unattended_ended_at: 2026-05-25 14:02
+unattended_exit_reason: 队列剩余任务全部为 awaiting_user_acceptance（task 01 / task 14），
+  agent 无可自主推进任务，按 karl-unattended-mode §10 第 2 项主动退出。
 last_active_task: 14-shelf-clipboard-source-app-icon-display.md
-current_blocker: 队列里没有可由 agent 自主推进的任务；task 01 / task 14 等待 Karl 真实界面验收。Karl 显式退出无人值守 / 给出新任务前 hold。
+current_blocker: none（等 Karl 真实界面验收 task 01 / task 14；不阻塞普通交互回合）
 
 ## 当前任务
 

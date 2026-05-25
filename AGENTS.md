@@ -27,65 +27,10 @@
 无人值守模式的项目级状态以下方 `UNATTENDED MODE` 哨兵块是否真实存在为准。
 后续 Agent 启动时若发现该哨兵块，应按全局技能 `karl-unattended-mode` 恢复无人值守循环。
 
-<<<<<<<<<<<<<<<<<<<< UNATTENDED MODE <<<<<<<<<<<<<<<<<<<<
-# 无人值守模式
+当前项目处于普通交互模式（execution_mode: interactive）。
+最近一轮无人值守已主动收尾，原因是队列剩余任务全部为 `awaiting_user_acceptance`
+（task 01 备份功能、task 14 图标显示等），agent 已无可自主推进任务
+（karl-unattended-mode §10 第 2 项）。
 
-当前项目处于无人值守自主执行模式。
-
-通用执行规则、打洞流程、状态语义、停止条件参照全局技能：
-`/Users/zhouqi/.codex/skills/karl-unattended-mode/SKILL.md`
-
-后续 Agent 必须以本哨兵块的存在 + `00-index.md` 的 `execution_mode: unattended` 双重确认，
-判断当前项目是否处于无人值守状态。
-
-## 当前无人值守任务可验收工作清单
-
-本节是当前项目独有的真实工作清单，不是抽象质量标准。
-进入模式时由 Agent 根据 PRODUCT.md / 00-index.md / 当前候选 task 生成；
-退出模式时随哨兵块一起移除。
-
-清单格式：
-
-```text
-- [ ] 交付项：具体要做成什么
-      验收方式：用什么真实操作、命令、MCP 请求、界面路径或数据结果证明完成
-      证据写回：结果写回哪个 task、00-index 或 PRODUCT 位置
-```
-
-### 当前剩余项
-
-本轮 unattended 已完成 task 10 / 11 / 12 / 13 / 14（commit `45a82b5` / `72d6bc9` /
-`1e890b4` / `c97d8bd` / `3eef0e2` / 待补 task 14 commit），
-全部代码层面交付到位且 `xcodebuild` 通过。剩余只有需要 Karl 真实操作验收的部分：
-
-- [ ] **本轮代码改动的真实界面验收**（awaiting_user_acceptance）
-      验收方式：
-      1. 在 Xcode 里 ⌘R 启动 cheatsheet
-      2. 长跑 30 分钟 + 频繁复制粘贴：不应再出现长跑后 SIGABRT（task 10）
-      3. 唤醒 Shelf：来源 App 图标和图片缩略真实显示（task 11）
-      4. 重启后第一次唤醒：剪贴板 tab 默认选中，文本预览第一帧可见（task 12）
-      5. 复制新内容时其他条目不闪烁、不抖动（task 13）
-      6. **task 14 图标显示**：唤醒 Shelf 进入剪贴板 tab，历史卡片应显示
-         真实 App 图标（Codex / Kiro / Safari / iShot 等都不再清一色 `app.dashed`）；
-         复制新条目后，sandbox `_EXTERNAL_DATA/` 下新增 blob 文件应在 ~2 KB 量级
-      证据写回：
-      - 视觉验收结果 → 由 Karl 在对话里反馈
-      - 如有回归 → Karl 给出现象后由后续 Agent 进入 karl-dev-debug
-
-- [ ] **task 01 备份功能验收**（awaiting_user_acceptance）
-      验收方式：
-      1. 在 cheatsheet 里打开"备份与恢复"窗口选择文件夹
-      2. 执行一次手动导出 → 检查目标文件夹是否生成 JSON
-      3. 在备份窗口选择该 JSON → 执行手动导入 → 检查分类 / 命令 / 收藏是否恢复
-      证据写回：
-      - 验收结果 → task 01 §8 执行记录
-      - 如发现导出 / 导入回归 → 进入 karl-dev-debug
-
-按 `karl-unattended-mode` 第 4 步本轮终态判定：
-当前所有剩余项都是 `awaiting_user_acceptance`，已触发 (b) 主动收尾退出条件。
-但 Karl 未给出新任务且未明确退出指令，本哨兵块按 Karl 上一轮决定保留挂起。
-下一个 Agent 进来时应按技能 §13.2 重新核对：是否需要主动退出。
-
-退出方式：
-Karl 明确输入"退出无人值守模式"后，Agent 应移除本哨兵块，并把 `execution_mode` 改回 `interactive`。
-<<<<<<<<<<<<<<<<<<<< END UNATTENDED MODE <<<<<<<<<<<<<<<<<<<<
+恢复方式：Karl 输入"进入无人值守模式：按 .project/agent-loop 连续执行，
+允许自主规划、编码、测试、提交，直到全部任务完成或触发停止条件"即可重新挂上。

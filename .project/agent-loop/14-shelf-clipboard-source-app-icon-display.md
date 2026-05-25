@@ -8,13 +8,15 @@
 - plan_review_policy: auto_approved
 - depends_on: 11-shelf-clipboard-icon-and-image-preview.md（done，但只是把 cap 从 64KB 提到 512KB）
 - parallel_safe: yes
-- execution_mode: unattended
+- execution_mode: interactive
 - unattended_started_at: 2026-05-25 12:35
 - unattended_trigger: Karl 明确要求按 .project/agent-loop 连续执行直到全部完成或触发停止条件
+- unattended_ended_at: 2026-05-25 14:02
+- unattended_exit_reason: 队列剩余任务全部为 awaiting_user_acceptance；agent 已无可自主推进任务（§10 第 2 项主动退出）
 - current_goal: 让 Shelf 剪贴板卡片真正显示来源 App 真实图标，不再清一色 `app.dashed`
 - next_action: 等待 Karl ⌘R 启动新构建，肉眼确认历史卡片图标真实显示
 - blocker: none
-- updated_at: 2026-05-25 13:58
+- updated_at: 2026-05-25 14:02
 
 ## 1. 目标和需求
 
