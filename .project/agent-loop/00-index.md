@@ -3,13 +3,14 @@
 当前执行模式：unattended
 execution_mode: unattended
 unattended_started_at: 2026-05-25 12:35
-last_active_task: 10-coredata-crash-mainqueue-merge.md
+last_active_task: 13-shelf-clipboard-incremental-update.md
+current_blocker: 队列里没有 agent 可自主推进的任务；task 01 等待 Karl 真实界面验收。Karl 显式退出无人值守 / 给出新任务前 hold。
 
 ## 当前任务
 
 | 文件名 | 适用场景 | 当前目标 |
 | --- | --- | --- |
-| `01-backup-favorites-and-groups.md` | 为本地收藏、分组和用户创建的剪贴内容增加备份与恢复能力 | 先实现可选择文件夹、手动导出、手动导入；再按确认范围加入定时导出 |
+| `01-backup-favorites-and-groups.md` | 为本地收藏、分组和用户创建的剪贴内容增加备份与恢复能力 | awaiting_user_acceptance；第一版编码完成，等待 Karl 实际操作验收手动导出 / 导入流程 |
 | `02-shelf-drag-swap-performance.md` | 底部横条命令/收藏卡片水平拖拽卡顿和交换结果错误 | done；已改为拖动中只预览、松手后交换并保存一次 |
 | `03-shelf-title-auto-sort.md` | 底部横条命令/收藏卡片增加按标题自动排序 | done；已增加手动/标题排序模式，标题排序下禁用拖拽，构建通过 |
 | `04-shelf-toolbar-button-style.md` | 底部横条顶部小图标按钮样式统一 | done；已以添加按钮描边圆样式统一排序、备份、设置、搜索按钮，构建通过 |
