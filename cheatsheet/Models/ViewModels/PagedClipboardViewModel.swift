@@ -69,9 +69,13 @@ final class PagedClipboardViewModel: ObservableObject {
     private var previewOffset: Int = 0
     private var previewGeneration: Int = 0
     private let maxPreviewCharacters = 2_000
-    /// 写入端 NSWorkspace 序列化的 macOS App 图标 PNG 普遍 130KB ~ 200KB（多分辨率位图），
-    /// 旧值 64KB 会把全部图标裁断成 nil。512KB 提供 2.5× 余量，能挡住极端异常值。
-    private let maxSourceAppIconBytes = 512 * 1024
+    /// 兜底值，防写入端意外炸出超大数据，不是业务过滤。
+    /// task 14 修复 A 之后，新写入的 sourceAppIcon 已经强制 redraw 到 32×32 deviceRGB PNG，
+    /// 体积稳定在几 KB；这里保留 8MB 兜底主要是为了：
+    /// 1) 兼容 task 14 之前写入的历史 _EXTERNAL_DATA blob（实测 130KB ~ 4MB）；
+    /// 2) 当未来写入路径出现回归时仍有 OOM 护栏。
+    /// 实测当前数据库最大 blob ≈ 4MB，8MB 提供 2× 余量。
+    private let maxSourceAppIconBytes = 8 * 1024 * 1024
     /// image 类型条目缩略的字节上限。当前预览面板一次最多 16 条，
     /// 16 × 2MB = 32MB 量级可控；超过时回退到 <image> 文本占位。
     private let maxImagePreviewBytes = 2 * 1024 * 1024

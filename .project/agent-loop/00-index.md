@@ -3,8 +3,8 @@
 当前执行模式：unattended
 execution_mode: unattended
 unattended_started_at: 2026-05-25 12:35
-last_active_task: 13-shelf-clipboard-incremental-update.md
-current_blocker: 队列里没有 agent 可自主推进的任务；task 01 等待 Karl 真实界面验收。Karl 显式退出无人值守 / 给出新任务前 hold。
+last_active_task: 14-shelf-clipboard-source-app-icon-display.md
+current_blocker: 队列里没有可由 agent 自主推进的任务；task 01 / task 14 等待 Karl 真实界面验收。Karl 显式退出无人值守 / 给出新任务前 hold。
 
 ## 当前任务
 
@@ -23,19 +23,20 @@ current_blocker: 队列里没有 agent 可自主推进的任务；task 01 等待
 | `11-shelf-clipboard-icon-and-image-preview.md` | 底部横条剪贴板卡片不再显示来源 App 图标和图片预览 | done；ClipboardPreviewItem 新增 imageData，maxSourceAppIconBytes 放宽到 512KB，ShelfCard image case 真渲染；xcodebuild 通过 |
 | `12-shelf-clipboard-fast-open.md` | 唤醒 Shelf 后剪贴板首屏要等几百 ms ~ 几 s | done；ShelfWindowController.show 预取 + AppStorage 记忆默认 tab + fetch 切窄到文本字段 + enrichBlobs 异步补 blob；xcodebuild 通过 |
 | `13-shelf-clipboard-incremental-update.md` | 复制一次就整页 reset，闪烁明显 | done；contextDidSave 改为读 userInfo 增量 patch，新增 applyChanges；ShelfViewModel 不再代理转发；xcodebuild 通过 |
+| `14-shelf-clipboard-source-app-icon-display.md` | 剪贴板卡片清一色 app.dashed 占位，看不到来源 App 真实图标 | awaiting_user_acceptance；写入端 redraw 32×32（~2KB），读取端 cap 提到 8MB 兜底；xcodebuild 通过 + 本地脚本验证体积比 1:700 |
 
 ## 任务状态字段
 
 ```text
-任务：13-shelf-clipboard-incremental-update.md
-status: done
+任务：14-shelf-clipboard-source-app-icon-display.md
+status: awaiting_user_acceptance
 phase: implementation-complete
-role_next: none
+role_next: Karl
 plan_review_policy: auto_approved
-depends_on: 12（done）
+depends_on: 11（done）
 parallel_safe: yes
-current_goal: 复制 / 删除时只对 previewItems 做增量 patch，不再整页 reset
-next_action: 等待 Karl 体感验收
+current_goal: 让历史 599 条剪贴板卡片立即显示真实 App 图标，并把新写入控制在 ~2KB
+next_action: 等待 Karl ⌘R 启动新构建验收图标显示
 blocker: none
-updated_at: 2026-05-25 13:18
+updated_at: 2026-05-25 13:58
 ```

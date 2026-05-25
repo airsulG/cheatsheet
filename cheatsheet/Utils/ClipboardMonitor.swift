@@ -76,8 +76,9 @@ class ClipboardMonitor {
             var appIconData: Data? = nil
             if let url = app?.bundleURL {
                 let icon = NSWorkspace.shared.icon(forFile: url.path)
-                icon.size = NSSize(width: 32, height: 32)
-                appIconData = self.pngData(from: icon)
+                // UI 显示尺寸 16pt × 2x = 32px。强制 redraw 到固定像素，避免 NSWorkspace
+                // 返回的多分辨率 NSImage 经 tiffRepresentation 序列化成 130KB ~ 4MB 大位图。
+                appIconData = self.pngData(fromIcon: icon, pixelSize: 32)
             }
 
             let item = ClipboardItem(
@@ -227,6 +228,44 @@ extension ClipboardMonitor {
     fileprivate func pngData(from image: NSImage) -> Data? {
         guard let tiffData = image.tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiffData) else { return nil }
+        return rep.representation(using: .png, properties: [:])
+    }
+
+    /// 把多分辨率 NSImage 强制重绘到固定像素尺寸的 deviceRGB ARGB 位图，再编码为 PNG。
+    ///
+    /// 背景：`NSWorkspace.shared.icon(forFile:)` 返回的多分辨率 NSImage
+    /// （含 16/32/64/128/256/512/1024 等多帧）即使设了 `image.size = 32x32`，
+    /// `tiffRepresentation` 仍会拼出包含全部分辨率的多帧 TIFF；
+    /// `NSBitmapImageRep(data:)` 通常拿到最大那一帧，导致 PNG 体积膨胀到 130KB ~ 4MB。
+    ///
+    /// 这里通过显式分配 `pixelSize×pixelSize` 的位图 rep 并用 `image.draw(in:)` 重绘，
+    /// 让 NSImage 自动选择最合适的内部 representation 缩放绘制，
+    /// 输出体积稳定在几 KB 量级。
+    fileprivate func pngData(fromIcon image: NSImage, pixelSize: Int) -> Data? {
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: pixelSize,
+            pixelsHigh: pixelSize,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else { return nil }
+        rep.size = NSSize(width: pixelSize, height: pixelSize)
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        image.draw(
+            in: NSRect(x: 0, y: 0, width: pixelSize, height: pixelSize),
+            from: .zero,
+            operation: .sourceOver,
+            fraction: 1.0
+        )
+        NSGraphicsContext.restoreGraphicsState()
+
         return rep.representation(using: .png, properties: [:])
     }
 

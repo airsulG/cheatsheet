@@ -54,7 +54,8 @@
 
 ### 当前剩余项
 
-本轮 unattended 已完成 task 10 / 11 / 12 / 13（commit `45a82b5` / `72d6bc9` / `1e890b4` / `c97d8bd` / `3eef0e2`），
+本轮 unattended 已完成 task 10 / 11 / 12 / 13 / 14（commit `45a82b5` / `72d6bc9` /
+`1e890b4` / `c97d8bd` / `3eef0e2` / 待补 task 14 commit），
 全部代码层面交付到位且 `xcodebuild` 通过。剩余只有需要 Karl 真实操作验收的部分：
 
 - [ ] **本轮代码改动的真实界面验收**（awaiting_user_acceptance）
@@ -64,6 +65,9 @@
       3. 唤醒 Shelf：来源 App 图标和图片缩略真实显示（task 11）
       4. 重启后第一次唤醒：剪贴板 tab 默认选中，文本预览第一帧可见（task 12）
       5. 复制新内容时其他条目不闪烁、不抖动（task 13）
+      6. **task 14 图标显示**：唤醒 Shelf 进入剪贴板 tab，历史卡片应显示
+         真实 App 图标（Codex / Kiro / Safari / iShot 等都不再清一色 `app.dashed`）；
+         复制新条目后，sandbox `_EXTERNAL_DATA/` 下新增 blob 文件应在 ~2 KB 量级
       证据写回：
       - 视觉验收结果 → 由 Karl 在对话里反馈
       - 如有回归 → Karl 给出现象后由后续 Agent 进入 karl-dev-debug
