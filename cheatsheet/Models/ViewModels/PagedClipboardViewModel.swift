@@ -16,6 +16,7 @@ struct ClipboardPreviewItem: Identifiable, Equatable {
     let uuid: UUID?
     let type: String
     let contentPreview: String
+    let sourceBundleId: String?
     let sourceAppName: String?
     let sourceAppIconData: Data?
     let sourceAppIconCacheKey: String?
@@ -42,6 +43,7 @@ struct ClipboardPreviewItem: Identifiable, Equatable {
             uuid: uuid,
             type: type,
             contentPreview: contentPreview,
+            sourceBundleId: sourceBundleId,
             sourceAppName: sourceAppName,
             sourceAppIconData: sourceAppIconData,
             sourceAppIconCacheKey: sourceAppIconCacheKey,
@@ -171,6 +173,7 @@ final class PagedClipboardViewModel: ObservableObject {
                         type: type,
                         maxCharacters: maxPreviewCharacters
                     ),
+                    sourceBundleId: item.sourceBundleId,
                     sourceAppName: item.sourceAppName,
                     sourceAppIconData: nil,
                     sourceAppIconCacheKey: nil,
@@ -297,6 +300,7 @@ final class PagedClipboardViewModel: ObservableObject {
                             type: type,
                             maxCharacters: maxPreviewCharacters
                         ),
+                        sourceBundleId: item.sourceBundleId,
                         sourceAppName: item.sourceAppName,
                         sourceAppIconData: nil,
                         sourceAppIconCacheKey: nil,

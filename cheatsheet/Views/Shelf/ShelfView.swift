@@ -697,9 +697,17 @@ private final class SourceAppIconCache {
 
     private let cache = NSCache<NSString, NSImage>()
 
-    private init() {}
+    private init() {
+        cache.countLimit = 256
+        cache.totalCostLimit = 12 * 1024 * 1024
+    }
 
-    func image(for data: Data?, cacheKey: String?) -> NSImage? {
+    func image(for data: Data?, cacheKey: String?, bundleID: String?) -> NSImage? {
+        if let bundleID,
+           let bundleImage = imageForBundleID(bundleID) {
+            return bundleImage
+        }
+
         guard let data, let cacheKey else { return nil }
 
         let key = cacheKey as NSString
@@ -708,7 +716,23 @@ private final class SourceAppIconCache {
         }
 
         guard let image = NSImage(data: data) else { return nil }
-        cache.setObject(image, forKey: key)
+        cache.setObject(image, forKey: key, cost: data.count)
+        return image
+    }
+
+    private func imageForBundleID(_ bundleID: String) -> NSImage? {
+        let key = "bundle:\(bundleID)" as NSString
+        if let image = cache.object(forKey: key) {
+            return image
+        }
+
+        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            return nil
+        }
+
+        let image = NSWorkspace.shared.icon(forFile: appURL.path)
+        image.size = NSSize(width: 64, height: 64)
+        cache.setObject(image, forKey: key, cost: 512 * 1024)
         return image
     }
 }
@@ -721,46 +745,17 @@ private struct ClipboardShelfCard: View {
 
     var body: some View {
         CardContainer(containerHeight: cardHeight) {
-            // Header：来源 App + 类型
+            // Header：只保留类型，来源 App 信息放到底部叠层。
             HStack(spacing: 6) {
-                sourceAppIconView
-                if let name = item.sourceAppName, !name.isEmpty {
-                    Text(name)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
                 Spacer()
                 typeChip
             }
         } content: {
-            ZStack(alignment: .bottomTrailing) {
-                // 内容层
-                switch item.type {
-                case "image":
-                    if let data = item.imageData, let img = NSImage(data: data) {
-                        Image(nsImage: img)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        placeholder("<image>")
-                    }
-                case "file":
-                    HStack(alignment: .center, spacing: 10) {
-                        Image(systemName: "doc")
-                            .font(.system(size: 32, weight: .regular))
-                            .foregroundColor(.secondary)
-                        Text(item.contentPreview)
-                            .font(.system(size: 13, weight: .medium))
-                            .lineLimit(2)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                default:
-                    textPreview(item.contentPreview)
-                }
+            ZStack(alignment: .bottom) {
+                clipboardContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+                sourceAppReadabilityOverlay
             }
         }
         .contextMenu {
@@ -768,6 +763,34 @@ private struct ClipboardShelfCard: View {
             Button("删除", role: .destructive) { onDelete() }
         }
         .onTapGesture { onCopy() }
+    }
+
+    @ViewBuilder
+    private var clipboardContent: some View {
+        switch item.type {
+        case "image":
+            if let data = item.imageData, let img = NSImage(data: data) {
+                Image(nsImage: img)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                placeholder("<image>")
+            }
+        case "file":
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: "doc")
+                    .font(.system(size: 32, weight: .regular))
+                    .foregroundColor(.secondary)
+                Text(item.contentPreview)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        default:
+            textPreview(item.contentPreview)
+        }
     }
 
     private func textPreview(_ text: String) -> some View {
@@ -783,7 +806,7 @@ private struct ClipboardShelfCard: View {
     }
 
     private var textPreviewLineLimit: Int {
-        let contentHeight = max(0, cardHeight - 54)
+        let contentHeight = max(0, cardHeight - 54 - sourceOverlayHeight * 0.55)
         let estimatedLineHeight: CGFloat = 18
         let lines = Int(contentHeight / estimatedLineHeight)
         return min(max(lines, 10), 34)
@@ -798,25 +821,101 @@ private struct ClipboardShelfCard: View {
         .frame(width: 260, height: cardHeight)
     }
 
-    // MARK: - Header 辅助视图
+    // MARK: - 来源 App 底部渐变叠层
 
-    private var sourceAppIconView: some View {
+    private var sourceAppReadabilityOverlay: some View {
+        ZStack(alignment: .bottom) {
+            bottomBlurGradient
+
+            HStack(spacing: 8) {
+                sourceAppIconImage
+                    .frame(width: sourceAppIconSize, height: sourceAppIconSize)
+                    .rotationEffect(.degrees(-6))
+                    .shadow(color: Color.black.opacity(0.18), radius: 4, x: 0, y: 2)
+                    .accessibilityHidden(true)
+
+                if let name = item.sourceAppName, !name.isEmpty {
+                    Text(name)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.primary.opacity(0.82))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 7)
+        }
+        .frame(height: sourceOverlayHeight, alignment: .bottom)
+        .frame(maxWidth: .infinity, alignment: .bottom)
+        .allowsHitTesting(false)
+    }
+
+    private var bottomBlurGradient: some View {
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .mask(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0.00),
+                            .init(color: .black.opacity(0.18), location: 0.18),
+                            .init(color: .black.opacity(0.62), location: 0.54),
+                            .init(color: .black, location: 1.00)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+
+            LinearGradient(
+                stops: [
+                    .init(color: Color(NSColor.controlBackgroundColor).opacity(0.00), location: 0.00),
+                    .init(color: Color(NSColor.controlBackgroundColor).opacity(0.20), location: 0.36),
+                    .init(color: Color(NSColor.controlBackgroundColor).opacity(0.66), location: 1.00)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .overlay(
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0.00),
+                    .init(color: Color.black.opacity(0.10), location: 1.00)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+    }
+
+    private var sourceAppIconImage: some View {
         Group {
             if let image = SourceAppIconCache.shared.image(
                 for: item.sourceAppIconData,
-                cacheKey: item.sourceAppIconCacheKey
+                cacheKey: item.sourceAppIconCacheKey,
+                bundleID: item.sourceBundleId
             ) {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFit()
-                    .cornerRadius(3)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             } else {
                 Image(systemName: "app.dashed")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: sourceAppIconSize * 0.58, weight: .medium))
                     .foregroundColor(.secondary)
             }
         }
-        .frame(width: 16, height: 16)
+    }
+
+    private var sourceAppIconSize: CGFloat {
+        min(max(cardHeight * 0.16, 34), 42)
+    }
+
+    private var sourceOverlayHeight: CGFloat {
+        min(max(cardHeight * 0.34, 72), 96)
     }
 
     private var typeChip: some View {
