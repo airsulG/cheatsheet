@@ -7,16 +7,18 @@
 
 import SwiftUI
 
-// 通用的可重排横向容器：使用 DragGesture 实现“只有一张卡片跟手”的重排效果
+// 通用的可重排横向容器：拖动时只移动当前卡片，松手后提交一次位置交换。
 struct ReorderableHStack<Item, ID: Hashable, Content: View>: View {
     let items: [Item]
     let id: KeyPath<Item, ID>
     let spacing: CGFloat
+    let allowsReordering: Bool
     let content: (Item) -> Content
-    let onMove: (_ from: Int, _ to: Int) -> Void
+    let onSwap: (_ from: Int, _ to: Int) -> Void
 
     @State private var draggingKey: AnyHashable? = nil
     @State private var dragTranslation: CGFloat = 0
+    @State private var dropTargetKey: AnyHashable? = nil
     @State private var frames: [AnyHashable: CGRect] = [:]
 
     private let coordSpace = "reorder-hstack"
@@ -36,16 +38,24 @@ struct ReorderableHStack<Item, ID: Hashable, Content: View>: View {
                     .scaleEffect(draggingKey == itemKey ? 1.04 : 1.0)
                     .shadow(color: Color.black.opacity(draggingKey == itemKey ? 0.2 : 0.12),
                             radius: draggingKey == itemKey ? 10 : 6, x: 0, y: draggingKey == itemKey ? 6 : 4)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.accentColor.opacity(dropTargetKey == itemKey ? 0.55 : 0), lineWidth: 2)
+                    )
                     .gesture(
                         DragGesture()
                             .onChanged { value in
+                                guard allowsReordering else { return }
                                 if draggingKey == nil { draggingKey = itemKey }
                                 dragTranslation = value.translation.width
-                                updateReorder(for: itemKey)
+                                updateDropTarget(for: itemKey)
                             }
                             .onEnded { _ in
+                                guard allowsReordering else { return }
+                                commitDrop(for: itemKey)
                                 draggingKey = nil
                                 dragTranslation = 0
+                                dropTargetKey = nil
                             }
                     )
             }
@@ -57,8 +67,23 @@ struct ReorderableHStack<Item, ID: Hashable, Content: View>: View {
         }
     }
 
-    private func updateReorder(for draggedKey: AnyHashable) {
-        guard let draggedFrame = frames[draggedKey] else { return }
+    private func updateDropTarget(for draggedKey: AnyHashable) {
+        dropTargetKey = targetKey(for: draggedKey)
+    }
+
+    private func commitDrop(for draggedKey: AnyHashable) {
+        guard let targetKey = dropTargetKey,
+              targetKey != draggedKey,
+              let fromIndex = items.firstIndex(where: { AnyHashable($0[keyPath: id]) == draggedKey }),
+              let toIndex = items.firstIndex(where: { AnyHashable($0[keyPath: id]) == targetKey }) else { return }
+
+        withAnimation(.interpolatingSpring(stiffness: 300, damping: 25)) {
+            onSwap(fromIndex, toIndex)
+        }
+    }
+
+    private func targetKey(for draggedKey: AnyHashable) -> AnyHashable? {
+        guard let draggedFrame = frames[draggedKey] else { return nil }
         let draggedCenterX = draggedFrame.midX + dragTranslation
 
         // 当前按布局位置排序的 id 列表
@@ -66,20 +91,13 @@ struct ReorderableHStack<Item, ID: Hashable, Content: View>: View {
             let key: AnyHashable = AnyHashable(item[keyPath: id])
             if let f = frames[key] { return (key, f.midX) }
             return nil
-        }.sorted { $0.1 < $1.1 }
-
-        // 拖拽中心落在第几个位置
-        var targetIndex = 0
-        for (idx, pair) in centers.enumerated() {
-            if draggedCenterX > pair.1 { targetIndex = idx + 1 }
         }
+        .filter { $0.0 != draggedKey }
+        .sorted { $0.1 < $1.1 }
 
-        guard let fromIndex = items.firstIndex(where: { AnyHashable($0[keyPath: id]) == draggedKey }) else { return }
-        if targetIndex != fromIndex {
-            withAnimation(.interpolatingSpring(stiffness: 300, damping: 25)) {
-                onMove(fromIndex, targetIndex)
-            }
-        }
+        return centers.min { lhs, rhs in
+            abs(lhs.1 - draggedCenterX) < abs(rhs.1 - draggedCenterX)
+        }?.0
     }
 }
 

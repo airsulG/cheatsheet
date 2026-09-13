@@ -175,6 +175,65 @@ final class DragDropTests: XCTestCase {
         XCTAssertEqual(newCommandViewModel.commands[0].name, "命令B")
         XCTAssertEqual(newCommandViewModel.commands[1].name, "命令A")
     }
+
+    func testCommandDragSwapPositions() throws {
+        let category = Category(context: context, name: "测试分类")
+
+        let command1 = Command(context: context, name: "命令1", content: "echo 1", category: category)
+        command1.order = 0
+
+        let command2 = Command(context: context, name: "命令2", content: "echo 2", category: category)
+        command2.order = 1
+
+        let command3 = Command(context: context, name: "命令3", content: "echo 3", category: category)
+        command3.order = 2
+
+        let command4 = Command(context: context, name: "命令4", content: "echo 4", category: category)
+        command4.order = 3
+
+        try context.save()
+        commandViewModel.fetchCommands(for: category)
+
+        commandViewModel.swapCommandPositions(from: 3, to: 0)
+        commandViewModel.fetchCommands(for: category)
+
+        XCTAssertEqual(commandViewModel.commands.map { $0.name ?? "" }, ["命令4", "命令2", "命令3", "命令1"])
+        XCTAssertEqual(commandViewModel.commands.map { $0.order }, [0, 1, 2, 3])
+    }
+
+    func testCommandTitleSorterUsesChineseDigitOrder() throws {
+        let titles = ["三", "十", "一", "二", "九"]
+        let sorted = titles.sorted {
+            CommandTitleSorter.compare($0, $1) == .orderedAscending
+        }
+
+        XCTAssertEqual(sorted, ["一", "二", "三", "九", "十"])
+    }
+
+    func testTitleSortModeRewritesCommandOrder() throws {
+        UserDefaults.standard.set(ShelfCardSortMode.title.rawValue, forKey: ShelfCardSortSettings.storageKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: ShelfCardSortSettings.storageKey)
+        }
+
+        let category = Category(context: context, name: "测试分类")
+        commandViewModel.sortModeProvider = { .title }
+
+        let command1 = Command(context: context, name: "三", content: "echo 3", category: category)
+        command1.order = 0
+
+        let command2 = Command(context: context, name: "一", content: "echo 1", category: category)
+        command2.order = 1
+
+        let command3 = Command(context: context, name: "二", content: "echo 2", category: category)
+        command3.order = 2
+
+        try context.save()
+        commandViewModel.fetchCommands(for: category)
+
+        XCTAssertEqual(commandViewModel.commands.map { $0.name ?? "" }, ["一", "二", "三"])
+        XCTAssertEqual(commandViewModel.commands.map { $0.order }, [0, 1, 2])
+    }
     
     // MARK: - 边界条件测试
     
