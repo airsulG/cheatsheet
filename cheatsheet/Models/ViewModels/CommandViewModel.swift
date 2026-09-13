@@ -9,6 +9,123 @@ import Foundation
 import CoreData
 import SwiftUI
 
+enum ShelfCardSortMode: String, CaseIterable, Identifiable {
+    case manual
+    case title
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .manual: return "手动排序"
+        case .title: return "按标题排序"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .manual: return "hand.draw"
+        case .title: return "textformat.abc"
+        }
+    }
+}
+
+enum ShelfCardSortSettings {
+    static let storageKey = "shelf_card_sort_mode"
+    static let defaultMode: ShelfCardSortMode = .title
+
+    static var mode: ShelfCardSortMode {
+        get {
+            let raw = UserDefaults.standard.string(forKey: storageKey) ?? defaultMode.rawValue
+            return ShelfCardSortMode(rawValue: raw) ?? defaultMode
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: storageKey)
+        }
+    }
+}
+
+enum CommandTitleSorter {
+    private static let chineseDigitOrder: [Character: Int] = [
+        "零": 0,
+        "一": 1,
+        "二": 2,
+        "三": 3,
+        "四": 4,
+        "五": 5,
+        "六": 6,
+        "七": 7,
+        "八": 8,
+        "九": 9,
+        "十": 10
+    ]
+
+    static func sorted(_ commands: [Command]) -> [Command] {
+        commands.sorted { lhs, rhs in
+            let result = compare(lhs.name, rhs.name)
+            if result == .orderedSame {
+                return (lhs.createdAt ?? .distantPast) < (rhs.createdAt ?? .distantPast)
+            }
+            return result == .orderedAscending
+        }
+    }
+
+    static func compare(_ lhs: String?, _ rhs: String?) -> ComparisonResult {
+        let left = Array((lhs ?? "").trimmingCharacters(in: .whitespacesAndNewlines))
+        let right = Array((rhs ?? "").trimmingCharacters(in: .whitespacesAndNewlines))
+        var leftIndex = 0
+        var rightIndex = 0
+
+        while leftIndex < left.count && rightIndex < right.count {
+            let leftChar = left[leftIndex]
+            let rightChar = right[rightIndex]
+
+            if let leftNumber = numberToken(in: left, start: leftIndex),
+               let rightNumber = numberToken(in: right, start: rightIndex) {
+                if leftNumber.value != rightNumber.value {
+                    return leftNumber.value < rightNumber.value ? .orderedAscending : .orderedDescending
+                }
+                leftIndex = leftNumber.endIndex
+                rightIndex = rightNumber.endIndex
+                continue
+            }
+
+            if let leftOrder = chineseDigitOrder[leftChar],
+               let rightOrder = chineseDigitOrder[rightChar],
+               leftOrder != rightOrder {
+                return leftOrder < rightOrder ? .orderedAscending : .orderedDescending
+            }
+
+            let leftString = String(leftChar).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            let rightString = String(rightChar).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            let result = leftString.localizedStandardCompare(rightString)
+            if result != .orderedSame {
+                return result
+            }
+
+            leftIndex += 1
+            rightIndex += 1
+        }
+
+        if left.count == right.count { return .orderedSame }
+        return left.count < right.count ? .orderedAscending : .orderedDescending
+    }
+
+    private static func numberToken(in characters: [Character], start: Int) -> (value: Int, endIndex: Int)? {
+        var index = start
+        var digits = ""
+
+        while index < characters.count, characters[index].isNumber {
+            digits.append(characters[index])
+            index += 1
+        }
+
+        guard !digits.isEmpty, let value = Int(digits) else { return nil }
+        return (value, index)
+    }
+}
+
+@MainActor
 class CommandViewModel: ObservableObject {
     
     private let viewContext: NSManagedObjectContext
@@ -19,8 +136,11 @@ class CommandViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var lastCopiedCommand: Command?
     @Published var showCopyToast = false
+    var sortModeProvider: () -> ShelfCardSortMode = { .manual }
     
     private var currentCategory: Category?
+    // 防乱序令牌：仅允许最新一次拉取写入结果
+    private var fetchGeneration: Int = 0
     
     init(context: NSManagedObjectContext) {
         self.viewContext = context
@@ -29,15 +149,18 @@ class CommandViewModel: ObservableObject {
     // MARK: - Fetch Operations
     
     func fetchCommands(for category: Category?) {
+        // 生成本次请求的令牌
+        fetchGeneration += 1
+        let gen = fetchGeneration
+
+        // 更新当前分类与加载状态
         currentCategory = category
+        isLoading = true
+        errorMessage = nil
 
-        DispatchQueue.main.async {
-            self.isLoading = true
-            self.errorMessage = nil
-        }
-
+        // 空分类：清空结果，仅当仍为最新请求时提交
         guard let category = category else {
-            DispatchQueue.main.async {
+            if gen == fetchGeneration {
                 self.commands = []
                 self.isLoading = false
             }
@@ -50,12 +173,13 @@ class CommandViewModel: ObservableObject {
 
         do {
             let fetchedCommands = try viewContext.fetch(request)
-            DispatchQueue.main.async {
-                self.commands = fetchedCommands
+            // 仅当此次请求仍为最新时写入结果
+            if gen == fetchGeneration {
+                self.commands = arrangedCommands(fetchedCommands)
                 self.isLoading = false
             }
         } catch {
-            DispatchQueue.main.async {
+            if gen == fetchGeneration {
                 self.errorMessage = "获取命令失败: \(error.localizedDescription)"
                 self.isLoading = false
             }
@@ -117,6 +241,29 @@ class CommandViewModel: ObservableObject {
         }
     }
     
+    // MARK: - Move Command to Another Category
+    
+    /// 将命令移动到另一个分类
+    func moveCommand(_ command: Command, to targetCategory: Category) {
+        // 保存原分类，用于重新排序
+        let sourceCategory = command.category
+        
+        // 移动命令到目标分类
+        command.category = targetCategory
+        command.order = Int32(targetCategory.commandCount)
+        command.updateTimestamp()
+        
+        // 重新排序原分类的命令
+        if let sourceCategory = sourceCategory {
+            sourceCategory.reorderCommands()
+        }
+        
+        saveContext()
+        
+        // 刷新当前显示的分类
+        fetchCommands(for: currentCategory)
+    }
+    
     // MARK: - Clipboard Operations
     
     func copyCommand(_ command: Command) {
@@ -141,7 +288,7 @@ class CommandViewModel: ObservableObject {
         guard sourceIndex != destinationIndex,
               sourceIndex < commands.count,
               destinationIndex < commands.count,
-              let category = currentCategory else { return }
+              currentCategory != nil else { return }
         
         // 更新本地数组
         commands.move(fromOffsets: IndexSet(integer: sourceIndex), toOffset: destinationIndex)
@@ -151,11 +298,49 @@ class CommandViewModel: ObservableObject {
         
         saveContext()
     }
+
+    func swapCommandPositions(from sourceIndex: Int, to destinationIndex: Int) {
+        guard sourceIndex != destinationIndex,
+              commands.indices.contains(sourceIndex),
+              commands.indices.contains(destinationIndex),
+              currentCategory != nil else { return }
+
+        commands.swapAt(sourceIndex, destinationIndex)
+        updateCommandOrders()
+        saveContext()
+    }
     
     private func updateCommandOrders() {
         for (index, command) in commands.enumerated() {
             command.order = Int32(index)
             command.updateTimestamp()
+        }
+    }
+
+    private func arrangedCommands(_ fetchedCommands: [Command]) -> [Command] {
+        if sortModeProvider() == .title {
+            let sorted = CommandTitleSorter.sorted(fetchedCommands)
+            persistCommandOrderIfNeeded(sorted)
+            return sorted
+        }
+
+        // 收藏置左：先按 isFavorite 降序，其次按 order 升序，保持稳定顺序
+        return fetchedCommands.sorted { lhs, rhs in
+            if lhs.isFavorite != rhs.isFavorite { return lhs.isFavorite && !rhs.isFavorite }
+            return lhs.order < rhs.order
+        }
+    }
+
+    private func persistCommandOrderIfNeeded(_ sortedCommands: [Command]) {
+        var changed = false
+        for (index, command) in sortedCommands.enumerated() where command.order != Int32(index) {
+            command.order = Int32(index)
+            command.updateTimestamp()
+            changed = true
+        }
+
+        if changed {
+            saveContext()
         }
     }
     

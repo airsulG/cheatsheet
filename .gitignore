@@ -1,3 +1,27 @@
 docs/
 .DS_Store
 .cursorcheatsheet.xcodeproj
+AGENT.md
+# Ignore Xcode user state files (per-user, volatile)
+*.xcuserstate
+**/xcuserdata/
+
+# Ignore PRD temporary documents (product requirements drafts)
+PRD/**
+
+# Ignore local agent and project context files
+.claude/
+.project/README.md
+.project/context/
+
+# 本机运行时备份保留在磁盘，不进入源码提交。
+/cheatsheet-backup-*.json
+
+# 本机规则备份不作为项目执行入口。
+/.kiro/steering/global-agents.md.bak.*
+
+# 图标源图保留版本；尺寸导出、打包文件和预览可重新生成。
+/generated/app-icon/AppIcon.appiconset/
+/generated/app-icon/AppIcon.iconset/
+/generated/app-icon/AppIcon.icns
+/generated/app-icon/cheatsheet-icon-size-preview-v1.png

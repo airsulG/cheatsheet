@@ -10,6 +10,7 @@ import SwiftUI
 struct ImportPanelView: View {
     let category: Category
     @ObservedObject var commandViewModel: CommandViewModel
+    let onClose: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     
     @State private var importJsonText = ""
@@ -18,6 +19,12 @@ struct ImportPanelView: View {
     
     private var isFormValid: Bool {
         !importJsonText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    init(category: Category, commandViewModel: CommandViewModel, onClose: (() -> Void)? = nil) {
+        self.category = category
+        self._commandViewModel = ObservedObject(wrappedValue: commandViewModel)
+        self.onClose = onClose
     }
     
     var body: some View {
@@ -75,7 +82,7 @@ struct ImportPanelView: View {
             Spacer()
             
             Button(action: {
-                dismiss()
+                close()
             }) {
                 Image(systemName: "xmark")
                     .font(.system(size: 14, weight: .medium))
@@ -224,7 +231,7 @@ struct ImportPanelView: View {
             Spacer()
 
             Button("取消") {
-                dismiss()
+                close()
             }
             .buttonStyle(.bordered)
 
@@ -284,7 +291,7 @@ struct ImportPanelView: View {
             
             // 2秒后自动关闭
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                dismiss()
+                close()
             }
 
         } catch {
@@ -295,6 +302,14 @@ struct ImportPanelView: View {
         }
         
         isImporting = false
+    }
+
+    private func close() {
+        if let onClose {
+            onClose()
+        } else {
+            dismiss()
+        }
     }
 }
 

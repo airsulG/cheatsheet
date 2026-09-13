@@ -10,6 +10,7 @@ import SwiftUI
 struct CategorySidebarView: View {
     @ObservedObject var categoryViewModel: CategoryViewModel
     var commandViewModel: CommandViewModel? = nil
+    @Binding var mainContentState: ContentView.MainContentState
     @State private var showingAddCategoryAlert = false
     @State private var newCategoryName = ""
     @State private var showingImportAlert = false
@@ -31,31 +32,43 @@ struct CategorySidebarView: View {
             .background(.clear)
 
             // 分类列表
-            List(selection: $categoryViewModel.selectedCategory) {
+            List {
                 // 欢迎页选项
                 Button(action: {
-                    categoryViewModel.selectedCategory = nil
+                    mainContentState = .welcome
                 }) {
                     HStack {
                         Text("欢迎页")
                             .foregroundColor(.primary)
                         Spacer()
                     }
-                    .padding(.vertical, 4)
                 }
                 .buttonStyle(.plain)
-                .listRowBackground(categoryViewModel.selectedCategory == nil ? Color.accentColor.opacity(0.2) : Color.clear)
+                .listRowBackground(mainContentState == .welcome ? Color.accentColor.opacity(0.2) : Color.clear)
+
+                // 剪贴板历史选项
+                Button(action: {
+                    mainContentState = .clipboardHistory
+                }) {
+                    HStack {
+                        Text("剪贴板")
+                            .foregroundColor(.primary)
+                        Spacer()
+                    }
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(mainContentState == .clipboardHistory ? Color.accentColor.opacity(0.2) : Color.clear)
 
                 // 固定分类
                 ForEach(Array(categoryViewModel.pinnedCategories.enumerated()), id: \.element.id) { index, category in
                     CategoryRowView(
                         category: category,
                         categoryViewModel: categoryViewModel,
+                        mainContentState: $mainContentState,
                         dragState: dragState,
                         index: index,
                         isPinnedSection: true
-                    )
-                    .tag(category)
+                    ).id(category.id) // Ensure unique ID for rows
                 }
 
                 // 其他分类
@@ -63,11 +76,11 @@ struct CategorySidebarView: View {
                     CategoryRowView(
                         category: category,
                         categoryViewModel: categoryViewModel,
+                        mainContentState: $mainContentState,
                         dragState: dragState,
                         index: categoryViewModel.pinnedCategories.count + index,
                         isPinnedSection: false
-                    )
-                    .tag(category)
+                    ).id(category.id) // Ensure unique ID for rows
                 }
                 
                 if categoryViewModel.categories.isEmpty {
@@ -230,6 +243,7 @@ struct CategorySidebarView: View {
 struct CategoryRowView: View {
     let category: Category
     @ObservedObject var categoryViewModel: CategoryViewModel
+    @Binding var mainContentState: ContentView.MainContentState
     @ObservedObject var dragState: DragState
     let index: Int
     let isPinnedSection: Bool
@@ -279,9 +293,19 @@ struct CategoryRowView: View {
             }
         }
         .contentShape(Rectangle())
+        .listRowBackground(
+            // 显示选中状态
+            {
+                if case .category(let selectedCategory) = mainContentState, selectedCategory == category {
+                    return Color.accentColor.opacity(0.2)
+                } else {
+                    return Color.clear
+                }
+            }()
+        )
         .onTapGesture {
-            print("🔍 CategoryRowView: 点击分类 \(category.name ?? "未命名")")
-            categoryViewModel.selectedCategory = category
+            // 直接设置状态，就像欢迎页和剪贴板一样
+            mainContentState = .category(category)
         }
         .draggable(dragData: dragData, dragState: dragState)
         .droppable(
@@ -382,9 +406,10 @@ struct EmptyCategoryView: View {
 #Preview {
     let context = PersistenceController.preview.container.viewContext
     let categoryViewModel = CategoryViewModel(context: context)
+    @State var state: ContentView.MainContentState = .welcome
 
     return NavigationView {
-        CategorySidebarView(categoryViewModel: categoryViewModel)
+        CategorySidebarView(categoryViewModel: categoryViewModel, mainContentState: $state)
             .frame(width: 250)
     }
 }

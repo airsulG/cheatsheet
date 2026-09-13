@@ -52,6 +52,11 @@ struct PersistenceController {
             command.order = Int32(index)
         }
 
+        // 创建示例剪贴板历史 (同步创建，时间不同)
+        let item1 = ClipboardItem(context: viewContext, content: "Preview clipboard item 1: git log --oneline")
+        item1.createdAt = Date().addingTimeInterval(-60) // 1 minute ago
+        let _ = ClipboardItem(context: viewContext, content: "Preview clipboard item 2: npm install")
+
         do {
             try viewContext.save()
         } catch {
@@ -65,6 +70,11 @@ struct PersistenceController {
 
     init(inMemory: Bool = false) {
         container = NSPersistentContainer(name: "cheatsheet")
+        // 启用轻量迁移，便于模型添加字段
+        if let desc = container.persistentStoreDescriptions.first {
+            desc.setOption(true as NSNumber, forKey: NSMigratePersistentStoresAutomaticallyOption)
+            desc.setOption(true as NSNumber, forKey: NSInferMappingModelAutomaticallyOption)
+        }
         if inMemory {
             container.persistentStoreDescriptions.first!.url = URL(fileURLWithPath: "/dev/null")
         }
