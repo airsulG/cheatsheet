@@ -423,6 +423,10 @@ struct ShelfView: View {
                     TextField(searchPlaceholder, text: $searchText)
                         .textFieldStyle(.plain)
                         .focused($isSearchFocused)
+                        .onAppear {
+                            ShelfWindowController.shared.focusSearch()
+                            isSearchFocused = true
+                        }
                     Button {
                         closeSearch()
                     } label: {
@@ -582,9 +586,6 @@ struct ShelfView: View {
     private func openSearch() {
         withAnimation(.easeInOut(duration: 0.2)) {
             isSearching = true
-        }
-        DispatchQueue.main.async {
-            isSearchFocused = true
         }
     }
 

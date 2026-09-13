@@ -10,6 +10,12 @@ import AppKit
 import SwiftUI
 import QuartzCore
 
+/// 无标题栏的悬浮面板仍需接收搜索框的键盘输入。
+final class ShelfPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
 enum ShelfPanelHeightSettings {
     static let storageKey = "shelfPanelHeight"
     static let defaultHeight: CGFloat = 300
@@ -52,6 +58,10 @@ final class ShelfWindowController {
         } else {
             show()
         }
+    }
+
+    func focusSearch() {
+        panel?.makeKey()
     }
 
     func show() {
@@ -136,7 +146,7 @@ final class ShelfWindowController {
             width: NSScreen.main?.frame.width ?? 1280,
             height: ShelfPanelHeightSettings.storedHeight
         )
-        let panel = NSPanel(
+        let panel = ShelfPanel(
             contentRect: initialRect,
             styleMask: [.nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
