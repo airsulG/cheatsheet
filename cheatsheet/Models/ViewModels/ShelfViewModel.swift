@@ -8,10 +8,12 @@
 import Foundation
 import CoreData
 import SwiftUI
+import Combine
 
 @MainActor
 final class ShelfViewModel: ObservableObject {
     let viewContext: NSManagedObjectContext
+    private var childViewModelCancellables = Set<AnyCancellable>()
 
     // 子 VM 复用现有逻辑
     @Published var categoryVM: CategoryViewModel
@@ -30,6 +32,7 @@ final class ShelfViewModel: ObservableObject {
         self.commandVM = CommandViewModel(context: context)
         self.pagedClipboardVM = PagedClipboardViewModel(context: context)
         self.commandVM.sortModeProvider = { ShelfCardSortSettings.mode }
+        bindChildViewModels()
         // 初次加载收藏
         fetchFavorites()
 
@@ -40,6 +43,23 @@ final class ShelfViewModel: ObservableObject {
         }
 
         NotificationCenter.default.addObserver(self, selector: #selector(contextDidSave(_:)), name: .NSManagedObjectContextDidSave, object: nil)
+    }
+
+    private func bindChildViewModels() {
+        let childChanges = [
+            categoryVM.objectWillChange,
+            commandVM.objectWillChange,
+            pagedClipboardVM.objectWillChange
+        ]
+
+        childChanges.forEach { publisher in
+            publisher
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.objectWillChange.send()
+                }
+                .store(in: &childViewModelCancellables)
+        }
     }
 
     @objc private func contextDidSave(_ noti: Notification) {
