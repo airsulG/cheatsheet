@@ -12,6 +12,7 @@ import UniformTypeIdentifiers
 
 struct BackupSettingsView: View {
     let context: NSManagedObjectContext
+    let showsHeader: Bool
 
     @ObservedObject private var settings = BackupSettings.shared
     @Environment(\.dismiss) private var dismiss
@@ -22,11 +23,18 @@ struct BackupSettingsView: View {
     @State private var showImportConfirmation = false
     @State private var pendingImportURL: URL?
 
+    init(context: NSManagedObjectContext, showsHeader: Bool = true) {
+        self.context = context
+        self.showsHeader = showsHeader
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            header
+            if showsHeader {
+                header
 
-            Divider()
+                Divider()
+            }
 
             Form {
                 Section {
@@ -126,7 +134,7 @@ struct BackupSettingsView: View {
             }
             .formStyle(.grouped)
         }
-        .frame(width: 520, height: 520)
+        .frame(width: showsHeader ? 520 : nil, height: showsHeader ? 520 : nil)
         .alert("导入备份", isPresented: $showImportConfirmation) {
             Button("取消", role: .cancel) {
                 pendingImportURL = nil

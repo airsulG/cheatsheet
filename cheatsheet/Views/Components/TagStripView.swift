@@ -42,6 +42,7 @@ struct TagStripView: View {
     let onMoveCategory: (_ from: Int, _ to: Int) -> Void
     let onRenameCategory: ((Category) -> Void)?  // 新增：重命名回调
     let onDeleteCategory: ((Category) -> Void)?  // 新增：删除回调
+    let onAddCategory: (() -> Void)?
 
     @State private var draggingKey: AnyHashable? = nil
     @State private var dragTranslation: CGFloat = 0
@@ -84,6 +85,19 @@ struct TagStripView: View {
                             }
                     )
                 }
+
+                if let onAddCategory {
+                    Button(action: onAddCategory) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.primary)
+                            .padding(6)
+                            .background(Circle().stroke(Color(NSColor.separatorColor), lineWidth: 1))
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("添加列表")
+                }
             }
             .padding(.vertical, 4)
         }
@@ -117,7 +131,6 @@ struct TagStripView: View {
     }
     
     // 构建分类标签的右键菜单
-    @ViewBuilder
     private func categoryContextMenu(for item: TagItem) -> AnyView {
         if case .category(let category) = item {
             return AnyView(
@@ -144,4 +157,3 @@ private struct FramesPrefKey: PreferenceKey {
         value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }
-

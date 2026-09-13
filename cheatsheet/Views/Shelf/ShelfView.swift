@@ -17,6 +17,7 @@ struct ShelfView: View {
     @State private var renamingCategory: Category? = nil
     @State private var newCategoryName: String = ""
     @State private var searchText: String = ""
+    @State private var showingImportTargetAlert = false
     /// 上次用户选中的 tab，跨 panel 生命周期持久化。
     /// 取值："clipboard" | "favorites" | category-uuid。第一次启动默认进剪贴板。
     @AppStorage("shelfLastTab") private var shelfLastTabRaw: String = "clipboard"
@@ -27,7 +28,7 @@ struct ShelfView: View {
     @State private var newAddCategoryName: String = ""  // 新增：新建分类名称
     @State private var showingDeleteCategoryAlert = false  // 新增：删除分类确认
     @State private var deletingCategory: Category? = nil   // 新增：待删除的分类
-    @AppStorage(ShelfCardSortSettings.storageKey) private var shelfCardSortModeRaw: String = ShelfCardSortMode.manual.rawValue
+    @AppStorage(ShelfCardSortSettings.storageKey) private var shelfCardSortModeRaw: String = ShelfCardSortSettings.defaultMode.rawValue
 
     private let cardSpacing: CGFloat = 12
     @StateObject private var dragState = ShelfDragState.shared
@@ -284,7 +285,7 @@ struct ShelfView: View {
             applyShelfLastTab()
         }
         .onChange(of: shelfCardSortModeRaw) { _, newValue in
-            ShelfCardSortSettings.mode = ShelfCardSortMode(rawValue: newValue) ?? .manual
+            ShelfCardSortSettings.mode = ShelfCardSortMode(rawValue: newValue) ?? ShelfCardSortSettings.defaultMode
             viewModel.applyShelfSortMode()
         }
         .onExitCommand {
@@ -355,6 +356,11 @@ struct ShelfView: View {
         } message: {
             Text("确定要删除分类 \"\(deletingCategory?.name ?? "")\" 吗？\n\n此操作将同时删除该分类下的所有命令，且无法撤销。")
         }
+        .alert("无法导入命令", isPresented: $showingImportTargetAlert) {
+            Button("知道了", role: .cancel) { }
+        } message: {
+            Text("请选择一个分类后再导入命令。")
+        }
 
         // 结束 body 视图
     }
@@ -400,18 +406,13 @@ struct ShelfView: View {
                 onDeleteCategory: { category in  // 新增：删除回调
                     showingDeleteCategoryAlert = true
                     deletingCategory = category
+                },
+                onAddCategory: {
+                    showingAddCategoryAlert = true
+                    newAddCategoryName = ""
                 }
             )
             .animation(.interpolatingSpring(stiffness: 300, damping: 25), value: viewModel.categoryVM.categories)
-
-            // 新建分类按钮（与标签条保持同一视觉层级）
-            Button {
-                showingAddCategoryAlert = true
-                newAddCategoryName = ""  // 清空输入
-            } label: {
-                toolbarIcon("plus")
-            }
-            .buttonStyle(.plain)
 
             Spacer(minLength: 4)
 
@@ -442,26 +443,24 @@ struct ShelfView: View {
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             } else {
                 HStack(spacing: 8) {
-                    sortToggleButton
-
                     Button {
-                        BackupWindowController.shared.present(context: viewModel.viewContext)
+                        openImportPanel()
                     } label: {
-                        toolbarIcon("externaldrive.badge.timemachine")
+                        toolbarIcon("square.and.arrow.down")
                     }
                     .buttonStyle(.plain)
-                    .help("备份与恢复")
+                    .help("JSON 批量导入")
 
-                    // 剪贴板设置按钮（仅在选中剪贴板时显示）
-                    if isClipboardSelected {
-                        Button {
-                            ClipboardSettingsWindowController.shared.present(viewModel: viewModel.pagedClipboardVM)
-                        } label: {
-                            toolbarIcon("gearshape")
-                        }
-                        .buttonStyle(.plain)
-                        .help("剪贴板设置")
+                    Button {
+                        AppSettingsWindowController.shared.present(
+                            context: viewModel.viewContext,
+                            clipboardViewModel: viewModel.pagedClipboardVM
+                        )
+                    } label: {
+                        toolbarIcon("gearshape")
                     }
+                    .buttonStyle(.plain)
+                    .help("设置")
 
                     Button {
                         openSearch()
@@ -470,9 +469,6 @@ struct ShelfView: View {
                     }
                     .buttonStyle(.plain)
                     .keyboardShortcut("f", modifiers: [.command])
-
-                    // 品牌徽章：仅在搜索未展开时显示，避免与标签条重叠
-                    brandBadge
                 }
             }
         }
@@ -598,6 +594,17 @@ struct ShelfView: View {
         }
     }
 
+    private func openImportPanel() {
+        if let selectedCategory = viewModel.selectedCategory {
+            ImportPanelWindowController.shared.present(
+                category: selectedCategory,
+                commandViewModel: viewModel.commandVM
+            )
+        } else {
+            showingImportTargetAlert = true
+        }
+    }
+
 }
 
 private extension ShelfView {
@@ -611,52 +618,7 @@ private extension ShelfView {
     }
 
     var currentSortMode: ShelfCardSortMode {
-        ShelfCardSortMode(rawValue: shelfCardSortModeRaw) ?? .manual
-    }
-
-    var nextSortMode: ShelfCardSortMode {
-        currentSortMode == .manual ? .title : .manual
-    }
-
-    var sortToggleButton: some View {
-        Button {
-            toggleShelfSortMode()
-        } label: {
-            Text(currentSortMode.label)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.primary)
-                .lineLimit(1)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Capsule().stroke(Color(NSColor.separatorColor), lineWidth: 1))
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .help("点击切换为\(nextSortMode.label)")
-    }
-
-    func toggleShelfSortMode() {
-        shelfCardSortModeRaw = nextSortMode.rawValue
-    }
-}
-
-// MARK: - 品牌徽章（位于 headerBar 右侧，避免与标签条重叠）
-private extension ShelfView {
-    var brandBadge: some View {
-        HStack(spacing: 6) {
-            Image("iconImage")
-                .resizable()
-                .frame(width: 16, height: 16)
-                .cornerRadius(3)
-            Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "CheatHub")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-        }
-        .padding(.horizontal, 2)
-        // 去除徽章化的背景与冗余内边距，仅保留图标与文字
-        .help("CheatHub")
+        ShelfCardSortMode(rawValue: shelfCardSortModeRaw) ?? ShelfCardSortSettings.defaultMode
     }
 }
 

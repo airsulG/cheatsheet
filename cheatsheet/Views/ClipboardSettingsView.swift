@@ -11,6 +11,7 @@ struct ClipboardSettingsView: View {
     @ObservedObject var viewModel: PagedClipboardViewModel
     @ObservedObject private var settings = ClipboardSettings.shared
     @Environment(\.dismiss) private var dismiss
+    private let showsHeader: Bool
     
     @State private var totalCount: Int = 0
     @State private var storageSize: Int64 = 0
@@ -18,23 +19,30 @@ struct ClipboardSettingsView: View {
     @State private var showClearOldAlert = false
     @State private var isClearing = false
     @State private var clearResultMessage: String?
+
+    init(viewModel: PagedClipboardViewModel, showsHeader: Bool = true) {
+        self._viewModel = ObservedObject(wrappedValue: viewModel)
+        self.showsHeader = showsHeader
+    }
     
     var body: some View {
         VStack(spacing: 0) {
-            // 标题栏
-            HStack {
-                Text("剪贴板设置")
-                    .font(.headline)
-                Spacer()
-                Button("完成") {
-                    dismiss()
+            if showsHeader {
+                // 标题栏
+                HStack {
+                    Text("剪贴板设置")
+                        .font(.headline)
+                    Spacer()
+                    Button("完成") {
+                        dismiss()
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
-                .buttonStyle(.borderedProminent)
+                .padding()
+
+                Divider()
             }
-            .padding()
-            
-            Divider()
-            
+
             Form {
                 // 保存时间设置
                 Section {
@@ -106,7 +114,7 @@ struct ClipboardSettingsView: View {
             }
             .formStyle(.grouped)
         }
-        .frame(width: 400, height: 420)
+        .frame(width: showsHeader ? 400 : nil, height: showsHeader ? 420 : nil)
         .onAppear {
             refreshStats()
         }
