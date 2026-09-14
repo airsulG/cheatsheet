@@ -31,14 +31,22 @@ final class AppSettingsWindowController {
             }
         )
         let hosting = NSHostingController(rootView: view)
-        let size = NSSize(width: 760, height: 560)
+        hosting.safeAreaRegions = []
+        hosting.sizingOptions = [.minSize]
+        let size = NSSize(width: 780, height: 600)
 
         let window = NSWindow(contentViewController: hosting)
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.setContentSize(size)
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.title = "设置"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.minSize = NSSize(width: 720, height: 540)
         window.isReleasedWhenClosed = false
-        window.level = .popUpMenu
+        window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         center(window)
 

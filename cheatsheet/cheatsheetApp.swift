@@ -10,17 +10,23 @@ import AppKit
 
 @main
 struct cheatsheetApp: App {
+    @NSApplicationDelegateAdaptor(CabinetAppDelegate.self) private var appDelegate
     let persistenceController = PersistenceController.shared
     private let clipboardMonitor: ClipboardMonitor
 
     init() {
-        GlobalHotkeyManager.shared.register()
+        GlobalHotkeyManager.shared.register(isPreview: CabinetRuntime.isPreview)
 
         // 使用后台上下文进行监控
         let backgroundContext = persistenceController.container.newBackgroundContext()
         clipboardMonitor = ClipboardMonitor(context: backgroundContext, pasteboard: SystemPasteboard())
-        clipboardMonitor.startMonitoring()
-        BackupService(context: backgroundContext).runAutomaticBackupIfNeeded()
+        if !CabinetRuntime.isPreview {
+            clipboardMonitor.startMonitoring()
+            BackupService(context: backgroundContext).runAutomaticBackupIfNeeded()
+        } else {
+            CabinetPreviewData.insert(into: persistenceController.container.viewContext)
+        }
+        DispatchQueue.main.async { CabinetWindowController.shared.show() }
 
         // 不再创建状态栏图标（顶部菜单栏图标已移除）
 
@@ -36,5 +42,15 @@ struct cheatsheetApp: App {
         Settings {
             EmptyView()
         }
+    }
+}
+
+final class CabinetAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        CabinetWindowController.shared.canTerminate() ? .terminateNow : .terminateCancel
+    }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        CabinetWindowController.shared.show()
+        return true
     }
 }

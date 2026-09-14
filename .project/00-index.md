@@ -1,6 +1,6 @@
 # cheatsheet 项目索引
 
-这里保存长期产品事实和历史材料入口。当前仓库整理与交付进度以 [Issue #5](https://github.com/airsulG/cheatsheet/issues/5) 及其关联 PR 为准；下面的任务记录保留此前的方案、执行证据和待验收项，不作为新任务队列。
+这里保存长期产品事实和历史材料入口。当前原生资料柜交付以 [Issue #7](https://github.com/airsulG/cheatsheet/issues/7) 及关联 PR 为准，原生运行和数据兼容证据见 [验证记录](04-artifacts/verification/7/README.md)。此前仓库整理对应 Issue #5；下面的任务记录保留此前的方案、执行证据和待验收项，不作为新任务队列。
 
 <<<<<<<<<<<<<<<<<<<< 00 Project Fact Map <<<<<<<<<<<<<<<<<<<<
 

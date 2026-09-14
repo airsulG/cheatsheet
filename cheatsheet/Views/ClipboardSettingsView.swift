@@ -43,15 +43,19 @@ struct ClipboardSettingsView: View {
                 Divider()
             }
 
-            Form {
+            CabinetSettingsPage {
                 // 保存时间设置
-                Section {
-                    Picker("历史保留时间", selection: $settings.retentionPeriod) {
-                        ForEach(ClipboardRetentionPeriod.allCases) { period in
-                            Text(period.displayName).tag(period)
+                CabinetSettingsSection {
+                    HStack {
+                        Text("历史保留时间")
+                        Spacer()
+                        Picker("历史保留时间", selection: $settings.retentionPeriod) {
+                            ForEach(ClipboardRetentionPeriod.allCases) { period in
+                                Text(period.displayName).tag(period)
+                            }
                         }
+                        .pickerStyle(.menu).labelsHidden().fixedSize()
                     }
-                    .pickerStyle(.menu)
                     
                     Text("超过保留时间的剪贴板记录将在下次启动时自动清理")
                         .font(.caption)
@@ -61,7 +65,7 @@ struct ClipboardSettingsView: View {
                 }
                 
                 // 数据统计
-                Section {
+                CabinetSettingsSection {
                     HStack {
                         Text("记录总数")
                         Spacer()
@@ -80,7 +84,7 @@ struct ClipboardSettingsView: View {
                 }
                 
                 // 手动清理
-                Section {
+                CabinetSettingsSection {
                     Button(role: .destructive) {
                         showClearOldAlert = true
                     } label: {
@@ -106,13 +110,12 @@ struct ClipboardSettingsView: View {
                 
                 // 清理结果提示
                 if let message = clearResultMessage {
-                    Section {
+                    CabinetSettingsSection {
                         Text(message)
                             .foregroundColor(.green)
                     }
                 }
             }
-            .formStyle(.grouped)
         }
         .frame(width: showsHeader ? 400 : nil, height: showsHeader ? 420 : nil)
         .onAppear {

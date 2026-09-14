@@ -75,7 +75,7 @@ struct RegressionChecks {
         let imported = try BackupService(context: restore.viewContext).importArchive(backup)
         precondition(imported.categoryCount == 1 && imported.commandCount == 6)
         let restoredArchive = try BackupService(context: restore.viewContext).makeArchive()
-        precondition(restoredArchive.categories[0].commands.contains { $0.content == longBody })
+        precondition(restoredArchive.commands?.contains { $0.content == longBody } == true)
         print("PASS: backup/archive import round-trip in isolated memory stores")
 
         _ = NSApplication.shared
