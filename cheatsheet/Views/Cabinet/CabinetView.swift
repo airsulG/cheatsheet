@@ -240,7 +240,7 @@ struct CabinetView: View {
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(spacing: 3) {
+                        LazyVStack(spacing: 9) {
                             ForEach(model.items) { item in
                                 resultRow(item).id(item.id)
                             }
@@ -258,8 +258,8 @@ struct CabinetView: View {
     }
 
     private func resultRow(_ item: CabinetItem) -> some View {
-        VStack(spacing: 0) {
-        Button { model.select(item.id) } label: {
+        ZStack(alignment: .bottomTrailing) {
+        Button { if model.select(item.id) { model.copy(close: false) } } label: {
             VStack(alignment: .leading, spacing: 10) {
                 if let data = item.image, let image = NSImage(data: data) {
                     Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: 145)
@@ -285,23 +285,28 @@ struct CabinetView: View {
                         if let date = record.createdAt { Text("·"); Text(date, style: .relative) }
                     }.font(.system(size: 10)).foregroundStyle(.tertiary)
                 }
+                Color.clear.frame(height: 22)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(14)
                 .contentShape(Rectangle())
-        }.buttonStyle(.plain)
-            HStack {
-                Spacer()
+        }.buttonStyle(.plain).help("单击卡片复制，保持窗口打开")
+            .accessibilityLabel("复制卡片：\(item.title)")
                 Button {
-                    if model.select(item.id) { model.copy(close: false) }
+                    model.select(item.id)
                 } label: {
-                    Label("复制", systemImage: "doc.on.doc")
+                    Label("查看", systemImage: "doc.text.magnifyingglass")
                         .font(.system(size: 10, weight: .medium))
                         .padding(.horizontal, 8).padding(.vertical, 5)
                         .background(palette.input, in: RoundedRectangle(cornerRadius: 5))
-                }.buttonStyle(.plain).help("复制内容，保持窗口打开")
-                    .accessibilityLabel("复制：\(item.title)")
-            }.padding(.horizontal, 12).padding(.bottom, 10)
+                }.buttonStyle(.plain).help("只查看全文，不复制")
+                    .accessibilityLabel("查看：\(item.title)")
+                    .padding(.trailing, 12).padding(.bottom, 10)
         }
-            .background(model.selection == item.id ? palette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .background(model.selection == item.id ? palette.selection : palette.reader.opacity(0.44), in: RoundedRectangle(cornerRadius: 7))
+            .overlay {
+                RoundedRectangle(cornerRadius: 7)
+                    .strokeBorder(model.selection == item.id ? Color.accentColor.opacity(0.48) : Color.primary.opacity(0.12), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
             .contextMenu {
                 Button("复制") { if model.select(item.id) { model.copy(close: false) } }
                 Button("复制并收起") { if model.select(item.id) { model.copy(close: true) } }

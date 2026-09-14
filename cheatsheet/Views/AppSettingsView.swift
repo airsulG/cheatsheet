@@ -161,7 +161,7 @@ private struct ShelfSettingsView: View {
                 Text("在列表标题旁切换最近修改、标题或手动顺序。片段右键菜单支持上移和下移。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("点击卡片正文阅读，卡片上的复制按钮直接复制并保持窗口打开。")
+                Text("单击整张卡片复制并保持窗口打开；卡片上的“查看”只打开全文，不复制。")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             } header: { Text("浏览与复制") }
             CabinetSettingsSection {
