@@ -55,7 +55,7 @@ final class CabinetViewModel: ObservableObject {
     @Published var snippetCount = 0
     @Published var favoriteCount = 0
     @Published var tagCounts: [NSManagedObjectID: Int] = [:]
-    @Published var sort = "最近修改"
+    @Published var sort = UserDefaults.standard.string(forKey: "cabinetSort") ?? "最近修改"
     var closeWindow: (() -> Void)?
     var focusSearch: (() -> Void)?
     private var originalDraft: CabinetDraft?
@@ -71,7 +71,9 @@ final class CabinetViewModel: ObservableObject {
         perform { try store.migrateLegacyTags() }
         reload()
         observer = NotificationCenter.default.addObserver(forName: .NSManagedObjectContextObjectsDidChange,
-            object: context, queue: .main) { [weak self] _ in
+            object: context, queue: .main) { [weak self] note in
+            guard [NSInsertedObjectsKey, NSUpdatedObjectsKey, NSDeletedObjectsKey, NSInvalidatedAllObjectsKey]
+                .contains(where: { note.userInfo?[$0] != nil }) else { return }
             Task { @MainActor [weak self] in
                 guard let self, !self.refreshScheduled else { return }
                 self.refreshScheduled = true
@@ -185,9 +187,12 @@ final class CabinetViewModel: ObservableObject {
         guard !dirty || allowLeaving() else { return }
         draft = nil; originalDraft = nil; query = text; reload()
     }
-    func select(_ id: NSManagedObjectID) {
-        guard id != selection, allowLeaving() else { return }
+    @discardableResult
+    func select(_ id: NSManagedObjectID) -> Bool {
+        if id == selection { return true }
+        guard allowLeaving() else { return false }
         draft = nil; originalDraft = nil; selection = id
+        return true
     }
     func moveSelection(_ offset: Int) {
         guard !items.isEmpty else { return }
@@ -249,6 +254,25 @@ final class CabinetViewModel: ObservableObject {
         }
     }
     func requestClose() { if allowLeaving() { closeWindow?() } }
+    func setSort(_ value: String) {
+        sort = value
+        UserDefaults.standard.set(value, forKey: "cabinetSort")
+        reload()
+    }
+    func move(_ item: CabinetItem, offset: Int) {
+        guard allowLeaving(), case .snippet = item, let index = items.firstIndex(where: { $0.id == item.id }) else { return }
+        let target = index + offset
+        guard items.indices.contains(target) else { return }
+        var reordered = items
+        reordered.swapAt(index, target)
+        perform {
+            for (order, value) in reordered.enumerated() {
+                if case .snippet(let command) = value { command.order = Int32(order) }
+            }
+            try context.save()
+            setSort("手动顺序")
+        }
+    }
     func perform(_ action: () throws -> Void) {
         do { try action() } catch { self.error = error.localizedDescription }
     }

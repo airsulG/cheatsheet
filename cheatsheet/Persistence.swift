@@ -8,7 +8,7 @@
 import CoreData
 
 struct PersistenceController {
-    static let shared = PersistenceController()
+    static let shared = PersistenceController(inMemory: CabinetRuntime.isPreview)
 
     @MainActor
     static let preview: PersistenceController = {

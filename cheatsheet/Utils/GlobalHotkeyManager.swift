@@ -77,7 +77,7 @@ class GlobalHotkeyManager {
         if hotKeyID.signature == "cht1".fourChar() && hotKeyID.id == 1 {
             // 在主线程切换底部横条（Shelf）
             DispatchQueue.main.async {
-                ShelfWindowController.shared.toggle()
+                CabinetWindowController.shared.toggle()
             }
             return noErr
         }

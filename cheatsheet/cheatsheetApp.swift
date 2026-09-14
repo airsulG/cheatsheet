@@ -14,13 +14,18 @@ struct cheatsheetApp: App {
     private let clipboardMonitor: ClipboardMonitor
 
     init() {
-        GlobalHotkeyManager.shared.register()
+        if !CabinetRuntime.isPreview { GlobalHotkeyManager.shared.register() }
 
         // 使用后台上下文进行监控
         let backgroundContext = persistenceController.container.newBackgroundContext()
         clipboardMonitor = ClipboardMonitor(context: backgroundContext, pasteboard: SystemPasteboard())
-        clipboardMonitor.startMonitoring()
-        BackupService(context: backgroundContext).runAutomaticBackupIfNeeded()
+        if !CabinetRuntime.isPreview {
+            clipboardMonitor.startMonitoring()
+            BackupService(context: backgroundContext).runAutomaticBackupIfNeeded()
+        } else {
+            CabinetPreviewData.insert(into: persistenceController.container.viewContext)
+        }
+        DispatchQueue.main.async { CabinetWindowController.shared.show() }
 
         // 不再创建状态栏图标（顶部菜单栏图标已移除）
 
