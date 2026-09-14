@@ -9,24 +9,28 @@ struct VerifyStoreMigration {
     typealias Snapshot = [String: [String: [String: String]]]
 
     @MainActor static func main() throws {
-        guard CommandLine.arguments.count == 4 else {
-            fatalError("Usage: verify-store <model.momd> <source-directory> <new-copy-directory>")
+        guard (4...5).contains(CommandLine.arguments.count) else {
+            fatalError("Usage: verify-store <model.momd> <source-directory> <target-directory> [--compare-current]")
         }
+        let compareCurrent = CommandLine.arguments.last == "--compare-current"
         let modelURL = URL(fileURLWithPath: CommandLine.arguments[1])
         let source = URL(fileURLWithPath: CommandLine.arguments[2], isDirectory: true)
         let destination = URL(fileURLWithPath: CommandLine.arguments[3], isDirectory: true)
         // copyItem 拒绝覆盖已有目录，源目录从不以可写方式打开。
-        try FileManager.default.copyItem(at: source, to: destination)
+        if !compareCurrent { try FileManager.default.copyItem(at: source, to: destination) }
         let oldModel = NSManagedObjectModel(contentsOf: modelURL.appendingPathComponent("cheatsheet.mom"))!
         oldModel.entities.forEach { $0.managedObjectClassName = "NSManagedObject" }
         let old = try open(oldModel, at: source.appendingPathComponent("cheatsheet.sqlite"), readOnly: true)
         let before = try snapshot(old.viewContext, schema: oldModel)
         try close(old)
         let newModel = NSManagedObjectModel(contentsOf: modelURL)!
-        let upgraded = try open(newModel, at: destination.appendingPathComponent("cheatsheet.sqlite"))
-        try CabinetStore(context: upgraded.viewContext).migrateLegacyTags()
+        let upgraded = try open(newModel, at: destination.appendingPathComponent("cheatsheet.sqlite"), readOnly: compareCurrent)
+        if !compareCurrent { try CabinetStore(context: upgraded.viewContext).migrateLegacyTags() }
         let after = try snapshot(upgraded.viewContext, schema: oldModel)
-        guard before == after else { throw Failure.changedLegacyValues }
+        let retained = before.allSatisfy { entity, records in
+            records.allSatisfy { id, values in after[entity]?[id] == values }
+        }
+        guard retained && (compareCurrent || before == after) else { throw Failure.changedLegacyValues }
         let commands = try upgraded.viewContext.fetch(Command.fetchRequest())
         for command in commands {
             guard command.tagsMigrated else { throw Failure.missingTag }
@@ -38,6 +42,10 @@ struct VerifyStoreMigration {
         print("PASS: every legacy attribute and relationship unchanged; counts \(report)")
         print("PASS: all legacy category links available as tags; image records \(images.count), decodable \(decodable)")
         try close(upgraded)
+        if compareCurrent {
+            print("PASS: current store read-only comparison preserves all original records; current counts \(after.mapValues(\.count))")
+            return
+        }
         let reopened = try open(newModel, at: destination.appendingPathComponent("cheatsheet.sqlite"))
         guard try snapshot(reopened.viewContext, schema: oldModel) == before else { throw Failure.changedLegacyValues }
         try close(reopened)

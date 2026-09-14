@@ -7,10 +7,11 @@ import sys
 
 
 def main():
-    if len(sys.argv) != 4:
-        sys.exit("用法：verify_store_migration.py <Debug DerivedData> <旧库快照目录> <不存在的目标目录>")
-    derived, source, destination = [pathlib.Path(p).resolve() for p in sys.argv[1:]]
-    if destination.exists() or source == destination:
+    if len(sys.argv) not in (4, 5) or (len(sys.argv) == 5 and sys.argv[4] != "--compare-current"):
+        sys.exit("用法：verify_store_migration.py <Debug DerivedData> <旧库快照目录> <目标目录> [--compare-current 只读核对已升级库]")
+    compare_current = len(sys.argv) == 5
+    derived, source, destination = [pathlib.Path(p).resolve() for p in sys.argv[1:4]]
+    if source == destination or (destination.exists() and not compare_current):
         sys.exit("目标目录必须不存在；禁止原地迁移或覆盖。")
     products = derived / "Build/Products/Debug"
     objects = derived / f"Build/Intermediates.noindex/cheatsheet.build/Debug/cheatsheet.build/Objects-normal/{platform.machine()}"
@@ -22,7 +23,7 @@ def main():
                     str(pathlib.Path(__file__).with_name("VerifyStoreMigration.swift")),
                     *files, "-o", str(output)], check=True)
     subprocess.run([str(output), str(products / "cheatsheet.app/Contents/Resources/cheatsheet.momd"),
-                    str(source), str(destination)], check=True)
+                    str(source), str(destination)] + (["--compare-current"] if compare_current else []), check=True)
 
 
 if __name__ == "__main__":
