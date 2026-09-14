@@ -8,6 +8,8 @@
 
 本次实现对应 [Issue #7](https://github.com/airsulG/cheatsheet/issues/7)，原生运行证据见 [验收记录](.project/04-artifacts/verification/7/README.md)。合并、正式安装与真实数据升级仍需按交付决定进行。
 
+窗口使用普通层级，点击其他 App 可正常切换；在后台时快捷键唤回，已在前台时收起。剪贴板来源以 App 图标和名称共同识别，右侧阅读与编辑共享侧栏的原生磨砂。标签旁加号直接新建标签；分组的创建、编辑和删除保留在管理菜单中。
+
 ## 构建
 
 使用完整 Xcode，在仓库根目录执行：

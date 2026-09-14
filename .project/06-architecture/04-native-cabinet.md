@@ -27,3 +27,5 @@
 构建、旧 SQLite 升级、新旧备份、删除恢复冲突、独立剪贴板格式及重启回读已通过；实际窗口完成新建、编辑、保存、多标签、分组、深浅切换和跨 App 快捷键路径。完整证据和验证限制见 [验证记录](../04-artifacts/verification/7/README.md)。正式数据库升级、合并与安装尚未执行。
 
 2026-09-14 输入与选择修订（77230fd）：CabinetSearchField 使用 NSTextField 自己的 field editor 保持焦点与组合输入。代理在 hasMarkedText 为真时不提交搜索，也不截获方向键和回车；SwiftUI 更新时不覆盖 marked text。⌘K 显式使窗口和输入框接收键盘，不再切换 SwiftUI FocusState。真实键入 sheji 后空格上屏“设计”已验证。列表滚动改为监听独立 selectionScrollRequest：鼠标 select 只改变选中对象，方向键与导航恢复才请求滚入视野，且不再使用 center 锚点。卡片单击查看、双击复制；仅复制成功后设置 copiedItemID，取消上一轮反馈计时并在两秒后清除成功提示，复制失败仍走错误提示。
+
+同日窗口与材质修订（4f0ec4d）：CabinetPanel 保留可激活、跨空间唤出和原生控制按钮，层级改为 normal，isFloatingPanel=false；toggle 仅在 App 活跃且资料柜为 key window 时收起，其余情况执行 show。右侧不再覆盖 palette.reader，透出根视图的 CabinetMaterial（NSVisualEffectView.sidebar / behindWindow）；NSTextView 与 NSScrollView 本身继续不画背景。CabinetClipboardSource 统一列表和原文区的来源信息，CabinetSourceIcon 缓存历史图标解码及本机 bundle 图标回退，不修改数据库或采集逻辑。
