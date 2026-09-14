@@ -10,6 +10,14 @@ struct CabinetView: View {
 
     private var palette: CabinetPalette { CabinetPalette(dark: appearance == "dark") }
 
+    private enum SidebarGrid {
+        static let inset: CGFloat = 12
+        static let icon: CGFloat = 16
+        static let gap: CGFloat = 10
+        static let accessory: CGFloat = 24
+        static let textInset = inset + icon + gap
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             toolbar
@@ -95,39 +103,42 @@ struct CabinetView: View {
                 place("全部资料", icon: "square.stack", count: model.snippetCount, target: .all)
                 place("常用", icon: "star", count: model.favoriteCount, target: .favorites)
             }.padding(.top, 18).padding(.bottom, 20)
-            Divider().padding(.horizontal, 10)
-            HStack {
+            Divider().padding(.horizontal, SidebarGrid.inset)
+            HStack(spacing: SidebarGrid.gap) {
                 Text("标签").foregroundStyle(.secondary)
                 Spacer()
                 Button { createTag() } label: {
-                    Image(systemName: "plus").frame(width: 20, height: 20).contentShape(Rectangle())
+                    Image(systemName: "plus").font(.system(size: 11, weight: .medium))
+                        .frame(width: SidebarGrid.accessory, height: 24).contentShape(Rectangle())
                 }.buttonStyle(.plain).help("新建标签").accessibilityLabel("新建标签")
-            }.font(.system(size: 11)).padding(.horizontal, 12).padding(.top, 19).padding(.bottom, 12)
+            }.font(.system(size: 11)).frame(height: 30)
+                .padding(.leading, SidebarGrid.textInset).padding(.trailing, SidebarGrid.inset)
+                .padding(.top, 12).padding(.bottom, 6)
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     if model.tags.contains(where: { $0.isPinned }) {
                         sectionLabel("置顶")
                         ForEach(model.tags.filter { $0.isPinned }) { tagRow($0) }
-                        Divider().padding(.vertical, 5)
+                        Divider().padding(.horizontal, SidebarGrid.inset).padding(.vertical, 5)
                     }
                     ForEach(model.groups) { group in
-                            HStack {
-                                Button {
-                                    let key = group.id?.uuidString ?? ""
-                                    if collapsed.contains(key) { collapsed.remove(key) }
-                                    else { collapsed.insert(key) }
-                                } label: {
-                                    HStack {
-                                        Image(systemName: collapsed.contains(group.id?.uuidString ?? "") ? "chevron.right" : "chevron.down").font(.system(size: 8, weight: .semibold))
-                                        Text(group.name ?? "").lineLimit(1)
-                                        Spacer()
-                                    }.foregroundStyle(.secondary)
-                                }.buttonStyle(.plain)
-                            }.font(.system(size: 12)).padding(.horizontal, 10).padding(.top, 8)
-                                .contextMenu { groupMenu(group) }
-                            if !collapsed.contains(group.id?.uuidString ?? "") {
-                                ForEach(model.tags.filter { $0.group == group }) { tagRow($0) }
-                            }
+                        Button {
+                            let key = group.id?.uuidString ?? ""
+                            if collapsed.contains(key) { collapsed.remove(key) }
+                            else { collapsed.insert(key) }
+                        } label: {
+                            HStack(spacing: SidebarGrid.gap) {
+                                Image(systemName: collapsed.contains(group.id?.uuidString ?? "") ? "chevron.right" : "chevron.down")
+                                    .font(.system(size: 8, weight: .semibold)).frame(width: SidebarGrid.icon)
+                                Text(group.name ?? "").lineLimit(1)
+                                Spacer(minLength: 0)
+                            }.foregroundStyle(.secondary).padding(.horizontal, SidebarGrid.inset)
+                                .frame(height: 28).contentShape(Rectangle())
+                        }.buttonStyle(.plain).font(.system(size: 12)).padding(.top, 4)
+                            .contextMenu { groupMenu(group) }
+                        if !collapsed.contains(group.id?.uuidString ?? "") {
+                            ForEach(model.tags.filter { $0.group == group }) { tagRow($0) }
+                        }
                     }
                     if model.tags.contains(where: { $0.group == nil }) {
                         sectionLabel("未分组")
@@ -137,42 +148,50 @@ struct CabinetView: View {
                         Text("用标签整理片段\n一个片段可以有多个标签")
                             .font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(5).padding(12)
                     }
-                }.padding(.vertical, 4)
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 4)
             }
             Spacer(minLength: 8)
-            Divider().padding(.horizontal, 10)
+            Divider().padding(.horizontal, SidebarGrid.inset)
             Button { model.navigate(.trash) } label: {
-                Label("最近删除", systemImage: "trash").font(.system(size: 11)).foregroundStyle(.secondary)
-            }.buttonStyle(.plain).padding(12)
+                HStack(spacing: SidebarGrid.gap) {
+                    Image(systemName: "trash").frame(width: SidebarGrid.icon)
+                    Text("最近删除")
+                    Spacer(minLength: 0)
+                }.font(.system(size: 11)).foregroundStyle(.secondary)
+                    .padding(.horizontal, SidebarGrid.inset).frame(height: 38).contentShape(Rectangle())
+            }.buttonStyle(.plain)
         }.padding(.horizontal, 9)
     }
 
     private func place(_ title: String, icon: String, count: Int, target: CabinetLocation) -> some View {
         Button { model.navigate(target) } label: {
-            HStack(spacing: 10) {
-                Image(systemName: icon).frame(width: 16).foregroundStyle(.secondary)
+            HStack(spacing: SidebarGrid.gap) {
+                Image(systemName: icon).frame(width: SidebarGrid.icon).foregroundStyle(.secondary)
                 Text(title).font(.system(size: 12, weight: .medium))
                 Spacer()
                 Text("\(count)").font(.system(size: 10).monospacedDigit()).foregroundStyle(.secondary)
-            }.padding(.horizontal, 12).frame(height: 36)
+                    .frame(width: SidebarGrid.accessory)
+            }.padding(.horizontal, SidebarGrid.inset).frame(height: 36)
                 .background(model.location == target ? palette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
                 .contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
 
     private func sectionLabel(_ title: String) -> some View {
-        Text(title).font(.system(size: 10, weight: .medium)).foregroundStyle(.tertiary).padding(.horizontal, 12).padding(.top, 9)
+        Text(title).font(.system(size: 10, weight: .medium)).foregroundStyle(.tertiary)
+            .padding(.leading, SidebarGrid.textInset).padding(.trailing, SidebarGrid.inset).padding(.top, 9)
     }
 
     private func tagRow(_ tag: Category) -> some View {
         HStack(spacing: 0) {
             Button { model.navigate(.tag(tag.objectID)) } label: {
-                HStack(spacing: 9) {
-                    Image(systemName: "number").font(.system(size: 10)).foregroundStyle(.tertiary)
+                HStack(spacing: SidebarGrid.gap) {
+                    Image(systemName: "number").font(.system(size: 10)).foregroundStyle(.tertiary).frame(width: SidebarGrid.icon)
                     Text(tag.name ?? "").lineLimit(1).help(tag.name ?? "")
                     Spacer(minLength: 2)
                     Text("\(model.tagCounts[tag.objectID] ?? 0)").font(.system(size: 10).monospacedDigit()).foregroundStyle(.tertiary)
-                }.padding(.horizontal, 12).frame(height: 30).contentShape(Rectangle())
+                        .frame(width: SidebarGrid.accessory)
+                }.padding(.horizontal, SidebarGrid.inset).frame(height: 30).contentShape(Rectangle())
             }.buttonStyle(.plain)
         }.font(.system(size: 13))
             .background(model.location == .tag(tag.objectID) ? palette.selection : .clear, in: RoundedRectangle(cornerRadius: 5))
