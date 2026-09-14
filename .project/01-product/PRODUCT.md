@@ -1,5 +1,13 @@
 # PRODUCT
 
+## 当前方向：原生资料柜（Issue #7，实施中）
+
+Karl 已授权将资料柜原型应用到正式 macOS App，技术路线保持 SwiftUI + AppKit + CoreData。资料柜成为主窗口，剪贴板与全部资料并列，常用是资料筛选；三栏分别承担导航、结果和全文阅读/编辑。快速复制并收起继续保留。专业冷静的深浅磨砂外观、较小的导航字号、上下排列的图片和说明是当前视觉基准。
+
+资料组织改为多标签，标签可置顶、分组及恢复删除；删除标签或分组不删除片段。新建只要求正文或图片，默认用正文首个非空行显示标题，可保留自定义标题，不要求选择类型。具体标签内新建预选该标签，其他主入口不强制附标签。剪贴板保留原文，保存的片段可独立编辑；复制、复制并收起、未保存保护和返回原位置使用明确文案。
+
+实施及验收以 [Issue #7](https://github.com/airsulG/cheatsheet/issues/7) 为准；完整原型演变保存在 [原型原始记录](../04-artifacts/inputs/7/prototype-history.md)，其中被后续反馈替代的旧方向仅作历史证据。下文保留原有产品事实，尚未替换的横条实现不能当作新资料柜已完成。
+
 <<<<<<<<<<<<<<<<<<<< 00 Product Identity <<<<<<<<<<<<<<<<<<<<
 
 `cheatsheet` is a local macOS command and clipboard utility. Its main user-visible experience is the bottom Shelf panel: a fast launcher for clipboard history, favorite commands, and categorized command snippets. The app stores durable user data through Core Data entities: `Category`, `Command`, and `ClipboardItem`.
