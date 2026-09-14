@@ -41,13 +41,13 @@ enum CabinetPreviewData {
                 image.unlockFocus()
                 let data = image.tiffRepresentation
                 _ = try store.save(nil, title: name, body: "保留图片比例，说明放在下方。", tags: [design], image: data)
-                let record = ClipboardItem(context: context, content: "", type: "image", sourceAppName: "预览")
+                let record = ClipboardItem(context: context, content: "", type: "image", sourceBundleId: "com.apple.Preview", sourceAppName: "预览")
                 record.data = data
             }
-            for (text, source) in [("最近复制的内容可以直接找到、复制；也能保存成独立片段继续编辑。", "备忘录"),
-                                   ("/Users/demo/Desktop/工作区/08-App/04-cheatsheet/README.md", "访达"),
-                                   ("git diff --stat", "终端")] {
-                _ = ClipboardItem(context: context, content: text, sourceAppName: source)
+            for (text, source, bundleID) in [("最近复制的内容可以直接找到、复制；也能保存成独立片段继续编辑。", "备忘录", "com.apple.Notes"),
+                                   ("/Users/demo/Desktop/工作区/08-App/04-cheatsheet/README.md", "访达", "com.apple.finder"),
+                                   ("git diff --stat", "终端", "com.apple.Terminal")] {
+                _ = ClipboardItem(context: context, content: text, sourceBundleId: bundleID, sourceAppName: source)
             }
             try context.save()
         } catch { assertionFailure(error.localizedDescription) }

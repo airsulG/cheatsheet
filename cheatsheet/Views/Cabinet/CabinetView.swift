@@ -99,10 +99,9 @@ struct CabinetView: View {
             HStack {
                 Text("标签").foregroundStyle(.secondary)
                 Spacer()
-                Menu {
-                    Button("新建标签…") { createTag() }
-                    Button("新建分组…") { createGroup() }
-                } label: { Image(systemName: "plus") }.menuStyle(.borderlessButton).fixedSize()
+                Button { createTag() } label: {
+                    Image(systemName: "plus").frame(width: 20, height: 20).contentShape(Rectangle())
+                }.buttonStyle(.plain).help("新建标签").accessibilityLabel("新建标签")
             }.font(.system(size: 11)).padding(.horizontal, 12).padding(.top, 19).padding(.bottom, 12)
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
@@ -268,13 +267,7 @@ struct CabinetView: View {
                     }
                 }
                 if case .history(let record) = item {
-                    HStack(spacing: 5) {
-                        if let data = record.sourceAppIcon, let icon = NSImage(data: data) {
-                            Image(nsImage: icon).resizable().frame(width: 13, height: 13)
-                        }
-                        Text(item.source)
-                        if let date = record.createdAt { Text("·"); Text(date, style: .relative) }
-                    }.font(.system(size: 10)).foregroundStyle(.tertiary)
+                    CabinetClipboardSource(record: record)
                 }
             }.frame(maxWidth: .infinity, alignment: .leading).padding(14)
                 .contentShape(Rectangle())
@@ -349,7 +342,7 @@ struct CabinetView: View {
                     Text("选择内容，查看全文").font(.system(size: 13)).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-        }.background(palette.reader)
+        }
     }
 
     private func reader(_ item: CabinetItem) -> some View {
@@ -372,6 +365,7 @@ struct CabinetView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         Color.clear.frame(height: 0).id("reader-top")
+                        if case .history(let record) = item { CabinetClipboardSource(record: record) }
                         if !item.tags.isEmpty {
                             CabinetTagFlow(spacing: 6) { ForEach(item.tags) { CabinetTagLabel(name: $0.name ?? "") } }
                         }

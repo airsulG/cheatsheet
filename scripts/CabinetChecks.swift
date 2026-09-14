@@ -163,6 +163,16 @@ struct CabinetChecks {
         precondition(!fieldEditor.hasMarkedText() && vm.query == "设计", "Committed Chinese should become the search query")
         searchWindow.orderOut(nil)
         print("PASS: mouse selection does not scroll; keyboard selection requests visibility; IME composition waits for Chinese commit")
+        let savedIcon = NSImage(size: NSSize(width: 22, height: 22))
+        savedIcon.lockFocus()
+        NSColor.green.setFill()
+        NSBezierPath(rect: NSRect(x: 0, y: 0, width: 22, height: 22)).fill()
+        savedIcon.unlockFocus()
+        let savedIconData = savedIcon.tiffRepresentation!
+        precondition(CabinetSourceIcon.image(data: savedIconData, bundleID: "missing.app") != nil)
+        precondition(CabinetSourceIcon.image(data: Data([0, 1]), bundleID: "com.apple.finder") != nil)
+        precondition(CabinetSourceIcon.image(data: nil, bundleID: "missing.app") == nil)
+        print("PASS: clipboard source icon uses saved data, falls back to installed app, and tolerates missing apps")
         let savedImageID = image.id
         context.reset()
         try upgraded.persistentStoreCoordinator.remove(upgraded.persistentStoreCoordinator.persistentStores[0])
