@@ -5,7 +5,6 @@ import SwiftUI
 struct CabinetView: View {
     @ObservedObject var model: CabinetViewModel
     @AppStorage("cabinetAppearance") private var appearance = "dark"
-    @FocusState private var searchFocused: Bool
     @State private var collapsed: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "cabinetCollapsedGroups") ?? [])
     @Environment(\.colorScheme) private var colorScheme
 
@@ -29,18 +28,25 @@ struct CabinetView: View {
         .tint(palette.accent)
         .accentColor(palette.accent)
         .frame(minWidth: 740, minHeight: 520)
-        .onAppear { model.focusSearch = {
-            searchFocused = false
-            DispatchQueue.main.async { searchFocused = true }
-        } }
+        .overlay(alignment: .top) {
+            if model.copiedItemID != nil {
+                Label("已复制到剪贴板", systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(palette.accent)
+                    .padding(.horizontal, 16).padding(.vertical, 11)
+                    .background(palette.reader, in: Capsule())
+                    .overlay(Capsule().stroke(palette.accent.opacity(0.5), lineWidth: 1))
+                    .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+                    .padding(.top, 84).allowsHitTesting(false)
+                    .accessibilityLabel("已复制到剪贴板")
+            }
+        }
         .onChange(of: collapsed) { _, value in UserDefaults.standard.set(Array(value), forKey: "cabinetCollapsedGroups") }
-        .onChange(of: searchFocused) { _, value in model.searchHasFocus = value }
         .alert("未能完成操作", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("好", role: .cancel) { model.error = nil }
         } message: { Text(model.error ?? "") }
         .background {
             Group {
-                Button("") { searchFocused = true }.keyboardShortcut("k", modifiers: .command)
+                Button("") { model.focusSearch?() }.keyboardShortcut("k", modifiers: .command)
                 Button("") { if model.draft != nil { _ = model.save() } }.keyboardShortcut("s", modifiers: .command)
                 Button("") { model.copy(close: true) }.keyboardShortcut(.return, modifiers: .command)
                 Button("") { model.newSnippet() }.keyboardShortcut("n", modifiers: .command)
@@ -54,13 +60,7 @@ struct CabinetView: View {
                 .font(.system(size: 18, weight: .semibold)).frame(width: 156, alignment: .leading)
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("搜索\(model.heading)的内容或标签…", text: Binding(get: { model.query }, set: { model.search($0) }))
-                    .textFieldStyle(.plain).focused($searchFocused)
-                    .onSubmit { model.copy(close: true) }
-                    .onMoveCommand { direction in
-                        if direction == .down { model.moveSelection(1) }
-                        if direction == .up { model.moveSelection(-1) }
-                    }
+                CabinetSearchField(model: model).frame(height: 20)
                 if !model.query.isEmpty {
                     Button { model.search("") } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain)
                 } else { Text("⌘ K").font(.system(size: 11)).foregroundStyle(.tertiary) }
@@ -104,18 +104,14 @@ struct CabinetView: View {
                     Button("新建分组…") { createGroup() }
                 } label: { Image(systemName: "plus") }.menuStyle(.borderlessButton).fixedSize()
             }.font(.system(size: 11)).padding(.horizontal, 12).padding(.top, 19).padding(.bottom, 12)
-            TextField("查找标签或分组…", text: $model.tagQuery)
-                .textFieldStyle(.roundedBorder).controlSize(.small).padding(.horizontal, 8).padding(.bottom, 12)
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
-                    if model.tags.contains(where: { $0.isPinned && matches($0) }) {
+                    if model.tags.contains(where: { $0.isPinned }) {
                         sectionLabel("置顶")
-                        ForEach(model.tags.filter { $0.isPinned && matches($0) }) { tagRow($0) }
+                        ForEach(model.tags.filter { $0.isPinned }) { tagRow($0) }
                         Divider().padding(.vertical, 5)
                     }
                     ForEach(model.groups) { group in
-                        if model.tagQuery.isEmpty || (group.name ?? "").localizedStandardContains(model.tagQuery) ||
-                            model.tags.contains(where: { $0.group == group && matches($0) }) {
                             HStack {
                                 Button {
                                     let key = group.id?.uuidString ?? ""
@@ -128,16 +124,15 @@ struct CabinetView: View {
                                         Spacer()
                                     }.foregroundStyle(.secondary)
                                 }.buttonStyle(.plain)
-                            }.font(.system(size: 11)).padding(.horizontal, 10).padding(.top, 8)
+                            }.font(.system(size: 12)).padding(.horizontal, 10).padding(.top, 8)
                                 .contextMenu { groupMenu(group) }
-                            if !collapsed.contains(group.id?.uuidString ?? "") || !model.tagQuery.isEmpty {
-                                ForEach(model.tags.filter { $0.group == group && (matches($0) || (group.name ?? "").localizedStandardContains(model.tagQuery)) }) { tagRow($0) }
+                            if !collapsed.contains(group.id?.uuidString ?? "") {
+                                ForEach(model.tags.filter { $0.group == group }) { tagRow($0) }
                             }
-                        }
                     }
-                    if model.tags.contains(where: { $0.group == nil && matches($0) }) {
+                    if model.tags.contains(where: { $0.group == nil }) {
                         sectionLabel("未分组")
-                        ForEach(model.tags.filter { $0.group == nil && matches($0) }) { tagRow($0) }
+                        ForEach(model.tags.filter { $0.group == nil }) { tagRow($0) }
                     }
                     if model.tags.isEmpty {
                         Text("用标签整理片段\n一个片段可以有多个标签")
@@ -170,10 +165,6 @@ struct CabinetView: View {
         Text(title).font(.system(size: 10, weight: .medium)).foregroundStyle(.tertiary).padding(.horizontal, 12).padding(.top, 9)
     }
 
-    private func matches(_ tag: Category) -> Bool {
-        model.tagQuery.isEmpty || (tag.name ?? "").localizedStandardContains(model.tagQuery)
-    }
-
     private func tagRow(_ tag: Category) -> some View {
         HStack(spacing: 0) {
             Button { model.navigate(.tag(tag.objectID)) } label: {
@@ -184,7 +175,7 @@ struct CabinetView: View {
                     Text("\(model.tagCounts[tag.objectID] ?? 0)").font(.system(size: 10).monospacedDigit()).foregroundStyle(.tertiary)
                 }.padding(.horizontal, 12).frame(height: 30).contentShape(Rectangle())
             }.buttonStyle(.plain)
-        }.font(.system(size: 11))
+        }.font(.system(size: 13))
             .background(model.location == .tag(tag.objectID) ? palette.selection : .clear, in: RoundedRectangle(cornerRadius: 5))
             .contextMenu { tagMenu(tag) }
     }
@@ -213,12 +204,10 @@ struct CabinetView: View {
 
     private var results: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text(model.heading).font(.system(size: 16, weight: .semibold))
-                    Text(model.location == .trash ? "\(model.deleted.count) 个可恢复项目" : "\(model.items.count) 个\(model.location == .clipboard ? "记录" : "片段")")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                }
+            HStack(spacing: 5) {
+                Text(model.heading).font(.system(size: 16, weight: .semibold)).lineLimit(1)
+                Text("（\(model.location == .trash ? model.deleted.count : model.items.count)）")
+                    .font(.system(size: 14)).foregroundStyle(.secondary).fixedSize()
                 Spacer()
                 if model.location != .clipboard && model.location != .trash {
                     Menu {
@@ -228,7 +217,7 @@ struct CabinetView: View {
                     } label: { Image(systemName: "arrow.up.arrow.down").font(.system(size: 11)) }
                         .menuStyle(.borderlessButton).fixedSize().help(model.sort)
                 }
-            }.padding(22)
+            }.padding(.horizontal, 20).frame(height: 52)
             Divider()
             if model.location == .trash { trashList }
             else if model.items.isEmpty {
@@ -247,7 +236,9 @@ struct CabinetView: View {
                             }
                         }.padding(9)
                     }
-                    .onChange(of: model.selection) { _, id in if let id { proxy.scrollTo(id, anchor: .center) } }
+                    .onChange(of: model.selectionScrollRequest) { _, _ in
+                        if let id = model.selection { proxy.scrollTo(id) }
+                    }
                 }
             }
             Divider()
@@ -259,7 +250,7 @@ struct CabinetView: View {
     }
 
     private func resultRow(_ item: CabinetItem) -> some View {
-        Button { if model.select(item.id) { model.copy(close: false) } } label: {
+        Button { model.select(item.id) } label: {
             VStack(alignment: .leading, spacing: 10) {
                 if let data = item.image, let image = NSImage(data: data) {
                     Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: 145)
@@ -287,8 +278,11 @@ struct CabinetView: View {
                 }
             }.frame(maxWidth: .infinity, alignment: .leading).padding(14)
                 .contentShape(Rectangle())
-        }.buttonStyle(.plain).help("单击卡片复制，保持窗口打开")
-            .accessibilityLabel("复制卡片：\(item.title)")
+        }.buttonStyle(.plain).help("单击查看，双击复制")
+            .accessibilityLabel("片段：\(item.title)")
+            .simultaneousGesture(TapGesture(count: 2).onEnded {
+                if model.select(item.id) { model.copy(close: false) }
+            })
             .background(model.selection == item.id ? palette.selection : palette.reader.opacity(0.44), in: RoundedRectangle(cornerRadius: 7))
             .overlay {
                 RoundedRectangle(cornerRadius: 7)

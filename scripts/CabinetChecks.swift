@@ -134,6 +134,35 @@ struct CabinetChecks {
         vm.search("后台剪贴板实时到达")
         precondition(vm.items.count == 1 && vm.clipboardCount == 6)
         print("PASS: background clipboard save merges on main and becomes searchable without reopening")
+        vm.navigate(.all)
+        vm.search("")
+        let scrollBefore = vm.selectionScrollRequest
+        if let last = vm.items.last { vm.select(last.id) }
+        precondition(vm.selectionScrollRequest == scrollBefore, "Mouse selection must not request scrolling")
+        vm.moveSelection(-1)
+        precondition(vm.selectionScrollRequest == scrollBefore + 1, "Keyboard selection should remain visible")
+        _ = NSApplication.shared
+        let searchWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 80),
+                                    styleMask: [.titled], backing: .buffered, defer: false)
+        let field = NSTextField(frame: NSRect(x: 20, y: 25, width: 320, height: 25))
+        let searchDelegate = CabinetSearchField.Coordinator(model: vm)
+        field.delegate = searchDelegate
+        searchWindow.contentView?.addSubview(field)
+        searchWindow.makeKeyAndOrderFront(nil)
+        precondition(searchWindow.makeFirstResponder(field))
+        let fieldEditor = field.currentEditor() as! NSTextView
+        fieldEditor.setMarkedText("sheji", selectedRange: NSRange(location: 5, length: 0),
+                                  replacementRange: NSRange(location: NSNotFound, length: 0))
+        searchDelegate.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+        precondition(fieldEditor.hasMarkedText() && vm.query.isEmpty,
+                     "Uncommitted IME text must not be used as a search query")
+        precondition(!searchDelegate.control(field, textView: fieldEditor,
+            doCommandBy: #selector(NSResponder.insertNewline(_:))), "IME Return must commit text, not copy")
+        fieldEditor.insertText("设计", replacementRange: NSRange(location: NSNotFound, length: 0))
+        searchDelegate.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+        precondition(!fieldEditor.hasMarkedText() && vm.query == "设计", "Committed Chinese should become the search query")
+        searchWindow.orderOut(nil)
+        print("PASS: mouse selection does not scroll; keyboard selection requests visibility; IME composition waits for Chinese commit")
         let savedImageID = image.id
         context.reset()
         try upgraded.persistentStoreCoordinator.remove(upgraded.persistentStoreCoordinator.persistentStores[0])

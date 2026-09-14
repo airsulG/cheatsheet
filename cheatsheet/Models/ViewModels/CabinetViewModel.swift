@@ -42,15 +42,17 @@ final class CabinetViewModel: ObservableObject {
     let store: CabinetStore
     @Published var location: CabinetLocation = .all
     @Published var query = ""
-    @Published var tagQuery = ""
     @Published var items: [CabinetItem] = []
     @Published var tags: [Category] = []
     @Published var groups: [TagGroup] = []
     @Published var deleted: [NSManagedObject] = []
     @Published var selection: NSManagedObjectID?
+    @Published var selectionScrollRequest = 0
     @Published var draft: CabinetDraft?
     @Published var error: String?
     @Published var feedback = ""
+    @Published var copiedItemID: NSManagedObjectID?
+    private var copyFeedbackTask: Task<Void, Never>?
     @Published var clipboardCount = 0
     @Published var snippetCount = 0
     @Published var favoriteCount = 0
@@ -190,6 +192,7 @@ final class CabinetViewModel: ObservableObject {
         query = contexts[target]?.0 ?? ""
         selection = contexts[target]?.1
         reload()
+        selectionScrollRequest += 1
         return true
     }
     func search(_ text: String) {
@@ -207,7 +210,9 @@ final class CabinetViewModel: ObservableObject {
     func moveSelection(_ offset: Int) {
         guard !items.isEmpty else { return }
         let index = items.firstIndex { $0.id == selection } ?? 0
-        select(items[min(max(0, index + offset), items.count - 1)].id)
+        if select(items[min(max(0, index + offset), items.count - 1)].id) {
+            selectionScrollRequest += 1
+        }
     }
     func newSnippet() {
         guard allowLeaving() else { return }
@@ -255,6 +260,14 @@ final class CabinetViewModel: ObservableObject {
         } else { success = pasteboard.setString(item.body, forType: .string) }
         guard success else { error = "复制失败，请重试"; return }
         feedback = "已复制"
+        copiedItemID = item.id
+        copyFeedbackTask?.cancel()
+        copyFeedbackTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            self?.copiedItemID = nil
+            if self?.feedback == "已复制" { self?.feedback = "" }
+        }
         if close { closeWindow?() }
     }
     func collect() {
