@@ -8,7 +8,7 @@ import sys
 
 
 def main():
-    if len(sys.argv) != 2:
+    if len(sys.argv) not in (2, 3):
         sys.exit("用法：python3 scripts/verify_core_behaviors.py <Debug 构建的 DerivedData 目录>")
     derived = pathlib.Path(sys.argv[1]).resolve()
     products = derived / "Build/Products/Debug"
@@ -21,8 +21,9 @@ def main():
     model = products / "cheatsheet.app/Contents/Resources/cheatsheet.momd"
     if not files or not model.exists():
         sys.exit("未找到本机架构的 Debug 构建，请先按 README 的命令构建。")
-    output = derived / "core-behavior-checks"
-    source = pathlib.Path(__file__).with_name("CoreBehaviorChecks.swift")
+    cabinet = len(sys.argv) == 3 and sys.argv[2] == "--cabinet"
+    output = derived / ("cabinet-checks" if cabinet else "core-behavior-checks")
+    source = pathlib.Path(__file__).with_name("CabinetChecks.swift" if cabinet else "CoreBehaviorChecks.swift")
     result = subprocess.run([
         "xcrun", "swiftc", "-parse-as-library", "-I", str(products),
         str(source), *files, "-o", str(output),

@@ -6,14 +6,17 @@
 //
 
 import Foundation
+import CoreData
 
 struct BackupArchive: Codable {
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     let version: Int
     let exportedAt: Date
     let appName: String
-    let categories: [BackupCategory]
+    var categories: [BackupCategory]
+    var commands: [BackupCommand]? = nil
+    var groups: [BackupTagGroup]? = nil
 
     init(
         version: Int = BackupArchive.currentVersion,
@@ -26,6 +29,14 @@ struct BackupArchive: Codable {
         self.appName = appName
         self.categories = categories
     }
+
+    mutating func categoriesMetadata(from sources: [Category]) {
+        for index in categories.indices {
+            categories[index].groupID = sources[index].group?.id
+            categories[index].previousGroupID = sources[index].previousGroupID
+            categories[index].deletedAt = sources[index].deletedAt
+        }
+    }
 }
 struct BackupCategory: Codable, Identifiable {
     let id: UUID
@@ -35,6 +46,9 @@ struct BackupCategory: Codable, Identifiable {
     let createdAt: Date
     let updatedAt: Date
     let commands: [BackupCommand]
+    var groupID: UUID? = nil
+    var previousGroupID: UUID? = nil
+    var deletedAt: Date? = nil
 }
 
 struct BackupCommand: Codable, Identifiable {
@@ -46,6 +60,17 @@ struct BackupCommand: Codable, Identifiable {
     let favoriteOrder: Int32?
     let createdAt: Date
     let updatedAt: Date
+    var tagIDs: [UUID]? = nil
+    var imageData: Data? = nil
+    var originID: UUID? = nil
+    var deletedAt: Date? = nil
+}
+
+struct BackupTagGroup: Codable {
+    let id: UUID
+    let name: String
+    let order: Int32
+    let deletedAt: Date?
 }
 
 struct BackupImportResult {

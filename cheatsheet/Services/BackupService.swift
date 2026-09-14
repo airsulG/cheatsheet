@@ -64,7 +64,25 @@ final class BackupService {
                 )
             }
 
-            return BackupArchive(categories: backupCategories)
+            var archive = BackupArchive(categories: backupCategories)
+            archive.categoriesMetadata(from: categories)
+            archive.commands = try context.fetch(Command.fetchRequest()).map { command in
+                var record = BackupCommand(id: command.id ?? UUID(), name: command.name ?? "",
+                    content: command.content ?? "", order: command.order, isFavorite: command.isFavorite,
+                    favoriteOrder: command.favoriteOrder, createdAt: command.createdAt ?? Date(),
+                    updatedAt: command.updatedAt ?? Date())
+                var tags = command.tags as? Set<Category> ?? []
+                if !command.tagsMigrated, let legacy = command.category { tags.insert(legacy) }
+                record.tagIDs = tags.compactMap(\.id)
+                record.imageData = command.imageData
+                record.originID = command.originID
+                record.deletedAt = command.deletedAt
+                return record
+            }
+            archive.groups = try context.fetch(TagGroup.fetchRequest()).map {
+                BackupTagGroup(id: $0.id ?? UUID(), name: $0.name ?? "", order: $0.order, deletedAt: $0.deletedAt)
+            }
+            return archive
         }
     }
 
@@ -113,10 +131,10 @@ final class BackupService {
     }
 
     func importArchive(_ archive: BackupArchive) throws -> BackupImportResult {
-        guard archive.version == BackupArchive.currentVersion else {
+        guard (1...BackupArchive.currentVersion).contains(archive.version) else {
             throw BackupError.unsupportedVersion(archive.version)
         }
-        guard !archive.categories.isEmpty else {
+        guard !archive.categories.isEmpty || !(archive.commands ?? []).isEmpty || !(archive.groups ?? []).isEmpty else {
             throw BackupError.emptyArchive
         }
 
@@ -125,20 +143,34 @@ final class BackupService {
             var categoryCount = 0
             var commandCount = 0
             var favoriteCount = 0
+            var importedTags: [UUID: Category] = [:]
+            var importedGroups: [UUID: TagGroup] = [:]
+            for record in archive.groups ?? [] {
+                let group = TagGroup(context: context)
+                group.id = UUID()
+                group.name = record.name
+                group.order = record.order
+                group.deletedAt = record.deletedAt
+                importedGroups[record.id] = group
+            }
 
             for (categoryIndex, backupCategory) in archive.categories.enumerated() {
                 let category = Category(context: context)
-                category.id = backupCategory.id
+                category.id = UUID()
                 category.name = uniqueCategoryName(backupCategory.name)
                 category.order = nextCategoryOrder + Int32(categoryIndex)
                 category.isPinned = backupCategory.isPinned
                 category.createdAt = backupCategory.createdAt
                 category.updatedAt = backupCategory.updatedAt
+                category.deletedAt = backupCategory.deletedAt
+                category.group = backupCategory.groupID.flatMap { importedGroups[$0] }
+                category.previousGroupID = backupCategory.previousGroupID.flatMap { importedGroups[$0]?.id }
+                importedTags[backupCategory.id] = category
                 categoryCount += 1
 
-                for backupCommand in backupCategory.commands.sorted(by: { $0.order < $1.order }) {
+                for backupCommand in (archive.commands == nil ? backupCategory.commands : []).sorted(by: { $0.order < $1.order }) {
                     let command = Command(context: context)
-                    command.id = backupCommand.id
+                    command.id = UUID()
                     command.name = backupCommand.name
                     command.content = backupCommand.content
                     command.order = backupCommand.order
@@ -147,11 +179,29 @@ final class BackupService {
                     command.createdAt = backupCommand.createdAt
                     command.updatedAt = backupCommand.updatedAt
                     command.category = category
+                    command.addToTags(category)
+                    command.tagsMigrated = true
                     commandCount += 1
                     if backupCommand.isFavorite {
                         favoriteCount += 1
                     }
                 }
+            }
+
+            for record in archive.commands ?? [] {
+                let command = Command(context: context, name: record.name, content: record.content)
+                command.order = record.order
+                command.isFavorite = record.isFavorite
+                command.favoriteOrder = record.favoriteOrder ?? 0
+                command.createdAt = record.createdAt
+                command.updatedAt = record.updatedAt
+                command.tags = NSSet(array: (record.tagIDs ?? []).compactMap { importedTags[$0] })
+                command.tagsMigrated = true
+                command.imageData = record.imageData
+                command.originID = record.originID
+                command.deletedAt = record.deletedAt
+                commandCount += 1
+                if command.isFavorite { favoriteCount += 1 }
             }
 
             try context.save()
