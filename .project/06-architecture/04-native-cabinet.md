@@ -13,3 +13,13 @@
 模型版本名为 cheatsheetV2.xcdatamodel。当前 Xcode 同步文件夹会重新选择按名称排在末尾的模型，因此新版本按此命名，同时显式登记 XCVersionGroup 和 .xccurrentversion。Apple DTS 已确认此类问题并认可命名办法：https://developer.apple.com/forums/thread/779939?page=2 。构建后与迁移检查一起验证实际当前模型，不只看配置文字。
 
 网页颜色、空间关系和交互是参考；原生材质使用 NSVisualEffectView，窗口可调整大小，实际快捷键仍由 macOS 响应者处理。不照搬网页模拟桌面或蓝灰/暖灰对照控件。验收需原生构建、存储行为检查及实际窗口截图，不能用网页截图替代。
+
+## 已实现的职责与验证
+
+实现代码固定在 f097cd3f55fa2dd13e900102bf9383f66c68aa1a。CabinetStore 负责迁移、标签、分组和恢复；CabinetViewModel 负责查询、选择、草稿保护与复制；CabinetWindowController 负责激活窗口、键盘响应、窗口大小与返回之前的 App。CabinetView 和 CabinetEditor 分别呈现三栏资料柜与连续正文，长文输入使用 NSTextView。原有 ClipboardMonitor、设置与导入继续使用，BackupService 增加 v2 格式并兼容 v1。
+
+数据保存通知只安排主线程刷新，不在后台通知线程读取 viewContext。后台自动合并后的刷新对象也纳入观察，避免新记录要重开窗口才能出现。普通 App 使用系统剪贴板；隔离 Debug 验收标识使用内存数据和命名剪贴板，不启动真实监控和自动备份。
+
+窗口使用可激活的 NSPanel，使跨 App 唤出后能接收键盘。显式设定初始尺寸并让 NSHostingController 只提供最小尺寸，避免阅读和编辑切换时窗口自行缩小。隐藏前保护未保存草稿，隐藏后激活先前的 App。恢复导航保存查询和选中项，并将选中项滚入视野；不承诺恢复每一像素的滚动偏移。
+
+构建、旧 SQLite 升级、新旧备份、删除恢复冲突、独立剪贴板格式及重启回读已通过；实际窗口完成新建、编辑、保存、多标签、分组、深浅切换和跨 App 快捷键路径。完整证据和验证限制见 [验证记录](../04-artifacts/verification/7/README.md)。正式数据库升级、合并与安装尚未执行。
