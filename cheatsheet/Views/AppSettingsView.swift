@@ -45,7 +45,8 @@ struct AppSettingsView: View {
         .ignoresSafeArea(.container, edges: .top)
         .preferredColorScheme(appearance == "dark" ? .dark : .light)
         .environment(\.locale, Locale(identifier: "zh_CN"))
-        .tint(Color(red: 0.38, green: 0.61, blue: 0.85))
+        .tint(CabinetPalette(dark: appearance == "dark").accent)
+        .accentColor(CabinetPalette(dark: appearance == "dark").accent)
         .frame(minWidth: 720, idealWidth: 780, minHeight: 540, idealHeight: 600)
     }
 
@@ -73,7 +74,7 @@ struct AppSettingsView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Label("cheatsheet", systemImage: "square.on.square")
+            Label { Text("cheatsheet") } icon: { CabinetAppIcon().frame(width: 24, height: 24) }
                 .font(.system(size: 14, weight: .semibold))
                 .padding(.horizontal, 12).frame(height: 72)
             Text("设置").font(.system(size: 10)).foregroundStyle(.tertiary)
@@ -161,7 +162,7 @@ private struct ShelfSettingsView: View {
                 Text("在列表标题旁切换最近修改、标题或手动顺序。片段右键菜单支持上移和下移。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("单击整张卡片复制并保持窗口打开；卡片上的“查看”只打开全文，不复制。")
+                Text("单击整张卡片复制并保持窗口打开，右侧显示全文；方向键可选择内容，编辑可从右侧或右键菜单进入。")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             } header: { Text("浏览与复制") }
             CabinetSettingsSection {

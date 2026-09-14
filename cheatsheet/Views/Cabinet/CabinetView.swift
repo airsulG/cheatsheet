@@ -26,7 +26,8 @@ struct CabinetView: View {
         .ignoresSafeArea(.container, edges: .top)
         .preferredColorScheme(appearance == "dark" ? .dark : .light)
         .environment(\.locale, Locale(identifier: "zh_CN"))
-        .tint(Color(red: 0.38, green: 0.61, blue: 0.85))
+        .tint(palette.accent)
+        .accentColor(palette.accent)
         .frame(minWidth: 740, minHeight: 520)
         .onAppear { model.focusSearch = {
             searchFocused = false
@@ -49,7 +50,7 @@ struct CabinetView: View {
 
     private var toolbar: some View {
         HStack(spacing: 18) {
-            Label("cheatsheet", systemImage: "square.on.square")
+            Label { Text("cheatsheet") } icon: { CabinetAppIcon().frame(width: 28, height: 28) }
                 .font(.system(size: 18, weight: .semibold)).frame(width: 156, alignment: .leading)
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -258,7 +259,6 @@ struct CabinetView: View {
     }
 
     private func resultRow(_ item: CabinetItem) -> some View {
-        ZStack(alignment: .bottomTrailing) {
         Button { if model.select(item.id) { model.copy(close: false) } } label: {
             VStack(alignment: .leading, spacing: 10) {
                 if let data = item.image, let image = NSImage(data: data) {
@@ -285,22 +285,10 @@ struct CabinetView: View {
                         if let date = record.createdAt { Text("·"); Text(date, style: .relative) }
                     }.font(.system(size: 10)).foregroundStyle(.tertiary)
                 }
-                Color.clear.frame(height: 22)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(14)
                 .contentShape(Rectangle())
         }.buttonStyle(.plain).help("单击卡片复制，保持窗口打开")
             .accessibilityLabel("复制卡片：\(item.title)")
-                Button {
-                    model.select(item.id)
-                } label: {
-                    Label("查看", systemImage: "doc.text.magnifyingglass")
-                        .font(.system(size: 10, weight: .medium))
-                        .padding(.horizontal, 8).padding(.vertical, 5)
-                        .background(palette.input, in: RoundedRectangle(cornerRadius: 5))
-                }.buttonStyle(.plain).help("只查看全文，不复制")
-                    .accessibilityLabel("查看：\(item.title)")
-                    .padding(.trailing, 12).padding(.bottom, 10)
-        }
             .background(model.selection == item.id ? palette.selection : palette.reader.opacity(0.44), in: RoundedRectangle(cornerRadius: 7))
             .overlay {
                 RoundedRectangle(cornerRadius: 7)

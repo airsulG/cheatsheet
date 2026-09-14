@@ -4,10 +4,18 @@ import SwiftUI
 
 struct CabinetPalette {
     let dark: Bool
-    var reader: Color { dark ? Color(red: 0.12, green: 0.13, blue: 0.15) : Color(red: 0.97, green: 0.975, blue: 0.98) }
+    var reader: Color { Color(white: dark ? 0.205 : 0.96) }
     var list: Color { dark ? Color.black.opacity(0.20) : Color.white.opacity(0.36) }
     var input: Color { dark ? Color.black.opacity(0.22) : Color.black.opacity(0.045) }
-    var selection: Color { Color(red: 0.36, green: 0.53, blue: 0.69).opacity(dark ? 0.22 : 0.14) }
+    var accent: Color { dark ? Color(red: 0.47, green: 0.66, blue: 0.59) : Color(red: 0.21, green: 0.43, blue: 0.35) }
+    var selection: Color { accent.opacity(dark ? 0.20 : 0.13) }
+}
+
+struct CabinetAppIcon: View {
+    var body: some View {
+        Image(nsImage: NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath))
+            .resizable().scaledToFit().accessibilityHidden(true)
+    }
 }
 
 struct CabinetMaterial: NSViewRepresentable {
