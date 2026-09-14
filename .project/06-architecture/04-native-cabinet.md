@@ -29,3 +29,5 @@
 2026-09-14 输入与选择修订（77230fd）：CabinetSearchField 使用 NSTextField 自己的 field editor 保持焦点与组合输入。代理在 hasMarkedText 为真时不提交搜索，也不截获方向键和回车；SwiftUI 更新时不覆盖 marked text。⌘K 显式使窗口和输入框接收键盘，不再切换 SwiftUI FocusState。真实键入 sheji 后空格上屏“设计”已验证。列表滚动改为监听独立 selectionScrollRequest：鼠标 select 只改变选中对象，方向键与导航恢复才请求滚入视野，且不再使用 center 锚点。卡片单击查看、双击复制；仅复制成功后设置 copiedItemID，取消上一轮反馈计时并在两秒后清除成功提示，复制失败仍走错误提示。
 
 同日窗口与材质修订（4f0ec4d）：CabinetPanel 保留可激活、跨空间唤出和原生控制按钮，层级改为 normal，isFloatingPanel=false；toggle 仅在 App 活跃且资料柜为 key window 时收起，其余情况执行 show。右侧不再覆盖 palette.reader，透出根视图的 CabinetMaterial（NSVisualEffectView.sidebar / behindWindow）；NSTextView 与 NSScrollView 本身继续不画背景。CabinetClipboardSource 统一列表和原文区的来源信息，CabinetSourceIcon 缓存历史图标解码及本机 bundle 图标回退，不修改数据库或采集逻辑。
+
+正式迁移已于同日完成：先停止旧进程并保留整份 SQLite 目录与外置附件，在副本迁移验证；同 bundle ID Release 版本安装到原路径，NSPersistentContainer 接续原沙盒，migrateLegacyTags 补入多标签关系。校验工具对旧模型全部属性和关系建立快照，二进制字段按 SHA-256 核对；默认只迁移到不存在的副本目录，--compare-current 只读核对正式库保留所有旧记录，允许监控新增记录。用户已将本机历史保留设置改为永久，避免启动清理旧历史。正式运行与模拟预览仍由原有 CabinetRuntime.isPreview 分流，未新增第二套数据源或云同步。
