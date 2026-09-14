@@ -36,8 +36,8 @@ struct BackupSettingsView: View {
                 Divider()
             }
 
-            Form {
-                Section {
+            CabinetSettingsPage {
+                CabinetSettingsSection {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text("备份文件夹")
@@ -58,13 +58,17 @@ struct BackupSettingsView: View {
                     Text("保存位置")
                 }
 
-                Section {
-                    Picker("自动导出", selection: $settings.frequency) {
-                        ForEach(BackupFrequency.allCases) { frequency in
-                            Text(frequency.displayName).tag(frequency)
+                CabinetSettingsSection {
+                    HStack {
+                        Text("自动导出")
+                        Spacer()
+                        Picker("自动导出", selection: $settings.frequency) {
+                            ForEach(BackupFrequency.allCases) { frequency in
+                                Text(frequency.displayName).tag(frequency)
+                            }
                         }
+                        .pickerStyle(.menu).labelsHidden().fixedSize()
                     }
-                    .pickerStyle(.menu)
 
                     if let lastAutoExportAt = settings.lastAutoExportAt {
                         Text("上次自动导出：\(formatDate(lastAutoExportAt))")
@@ -79,7 +83,8 @@ struct BackupSettingsView: View {
                     Text("定时导出")
                 }
 
-                Section {
+                CabinetSettingsSection {
+                    HStack(spacing: 10) {
                     Button {
                         exportNow()
                     } label: {
@@ -99,6 +104,7 @@ struct BackupSettingsView: View {
                         }
                     }
                     .disabled(isWorking)
+                    }
 
                     Text("导入会追加标签、分组与片段，不会覆盖现有数据；重名时会加序号。新备份也包含无标签片段与图片。")
                         .font(.caption)
@@ -108,7 +114,7 @@ struct BackupSettingsView: View {
                 }
 
                 if let lastExportPath = settings.lastExportPath {
-                    Section {
+                    CabinetSettingsSection {
                         Text(lastExportPath)
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -119,20 +125,19 @@ struct BackupSettingsView: View {
                 }
 
                 if let resultMessage {
-                    Section {
+                    CabinetSettingsSection {
                         Text(resultMessage)
                             .foregroundColor(.green)
                     }
                 }
 
                 if let errorMessage {
-                    Section {
+                    CabinetSettingsSection {
                         Text(errorMessage)
                             .foregroundColor(.red)
                     }
                 }
             }
-            .formStyle(.grouped)
         }
         .frame(width: showsHeader ? 520 : nil, height: showsHeader ? 520 : nil)
         .alert("导入备份", isPresented: $showImportConfirmation) {

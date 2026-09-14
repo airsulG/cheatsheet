@@ -17,7 +17,7 @@ final class CabinetWindowController: NSObject, NSWindowDelegate {
     private var keyMonitor: Any?
 
     func toggle() {
-        if panel?.isVisible == true { model?.requestClose() }
+        if panel?.isVisible == true && panel?.isMiniaturized == false { model?.requestClose() }
         else { show() }
     }
     func show() {
@@ -26,6 +26,7 @@ final class CabinetWindowController: NSObject, NSWindowDelegate {
         }
         ensurePanel()
         guard let panel else { return }
+        if panel.isMiniaturized { panel.deminiaturize(nil) }
         if let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }),
            !screen.visibleFrame.intersects(panel.frame) {
             panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - panel.frame.width / 2,
@@ -48,11 +49,12 @@ final class CabinetWindowController: NSObject, NSWindowDelegate {
         let model = CabinetViewModel(context: context, pasteboard: pasteboard)
         self.model = model
         let panel = CabinetPanel(contentRect: NSRect(x: 0, y: 0, width: 1140, height: 740),
-            styleMask: [.resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false)
         panel.title = CabinetRuntime.isPreview ? "cheatsheet · 隔离验收" : "cheatsheet"
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
+        panel.titlebarSeparatorStyle = .none
         panel.appearance = NSAppearance(named: UserDefaults.standard.string(forKey: "cabinetAppearance") == "light" ? .aqua : .darkAqua)
         panel.isFloatingPanel = true
         panel.level = .floating
@@ -65,8 +67,8 @@ final class CabinetWindowController: NSObject, NSWindowDelegate {
         panel.hasShadow = true
         panel.isMovableByWindowBackground = true
         panel.minSize = NSSize(width: 760, height: 560)
-        let hosting = NSHostingController(rootView: CabinetView(model: model)
-            .clipShape(RoundedRectangle(cornerRadius: 12)))
+        let hosting = NSHostingController(rootView: CabinetView(model: model))
+        hosting.safeAreaRegions = []
         hosting.sizingOptions = [.minSize]
         panel.contentViewController = hosting
         let available = NSScreen.main?.visibleFrame.size ?? NSSize(width: 1280, height: 900)

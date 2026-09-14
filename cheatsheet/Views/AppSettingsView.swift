@@ -14,6 +14,7 @@ struct AppSettingsView: View {
     @ObservedObject var clipboardViewModel: PagedClipboardViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var selectedSection: AppSettingsSection? = .shelf
+    @AppStorage("cabinetAppearance") private var appearance = "dark"
 
     private let onDone: (() -> Void)?
 
@@ -28,28 +29,34 @@ struct AppSettingsView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-
+        HStack(spacing: 0) {
+            sidebar
             Divider()
-
-            HStack(spacing: 0) {
-                sidebar
-
+            VStack(spacing: 0) {
+                header
                 Divider()
-
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .background(CabinetPalette(dark: appearance == "dark").reader)
         }
-        .frame(minWidth: 720, idealWidth: 760, minHeight: 520, idealHeight: 560)
+        .padding(.top, 28)
+        .background(CabinetMaterial())
+        .ignoresSafeArea(.container, edges: .top)
+        .preferredColorScheme(appearance == "dark" ? .dark : .light)
+        .environment(\.locale, Locale(identifier: "zh_CN"))
+        .tint(Color(red: 0.38, green: 0.61, blue: 0.85))
+        .frame(minWidth: 720, idealWidth: 780, minHeight: 540, idealHeight: 600)
     }
 
     private var header: some View {
-        HStack {
-            Text("设置")
-                .font(.headline)
-
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 7) {
+                Text((selectedSection ?? .shelf).title)
+                    .font(.system(size: 15, weight: .semibold))
+                Text((selectedSection ?? .shelf).summary)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
             Spacer()
 
             Button("完成") {
@@ -59,18 +66,32 @@ struct AppSettingsView: View {
                     dismiss()
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.bordered).controlSize(.small)
         }
-        .padding()
+        .padding(.horizontal, 26).frame(height: 88)
     }
 
     private var sidebar: some View {
-        List(AppSettingsSection.allCases, selection: $selectedSection) { section in
-            Label(section.title, systemImage: section.systemImage)
-                .tag(section)
+        VStack(alignment: .leading, spacing: 5) {
+            Label("cheatsheet", systemImage: "square.on.square")
+                .font(.system(size: 14, weight: .semibold))
+                .padding(.horizontal, 12).frame(height: 72)
+            Text("设置").font(.system(size: 10)).foregroundStyle(.tertiary)
+                .padding(.horizontal, 12).padding(.bottom, 6)
+            ForEach(AppSettingsSection.allCases) { section in
+                Button { selectedSection = section } label: {
+                    Label(section.title, systemImage: section.systemImage)
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12).frame(height: 36)
+                        .background(selectedSection == section ? CabinetPalette(dark: appearance == "dark").selection : .clear,
+                                    in: RoundedRectangle(cornerRadius: 6))
+                        .contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            }
+            Spacer()
         }
-        .listStyle(.sidebar)
-        .frame(width: 180)
+        .padding(.horizontal, 12).frame(width: 176)
     }
 
     @ViewBuilder
@@ -114,31 +135,84 @@ private enum AppSettingsSection: String, CaseIterable, Identifiable, Hashable {
             return "externaldrive.badge.timemachine"
         }
     }
+
+    var summary: String {
+        switch self {
+        case .shelf: return "外观与日常操作"
+        case .clipboard: return "保留历史，管理本机存储"
+        case .backup: return "保存资料副本，或从备份追加导入"
+        }
+    }
 }
 
 private struct ShelfSettingsView: View {
     @AppStorage("cabinetAppearance") private var appearance = "dark"
 
     var body: some View {
-        Form {
-            Section {
+        CabinetSettingsPage {
+            CabinetSettingsSection {
                 Picker("外观", selection: $appearance) {
                     Text("深色").tag("dark")
                     Text("浅色").tag("light")
                 }
                 .pickerStyle(.segmented)
-
+            } header: { Text("外观") }
+            CabinetSettingsSection {
                 Text("在列表标题旁切换最近修改、标题或手动顺序。片段右键菜单支持上移和下移。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                LabeledContent("唤出或收起", value: CabinetRuntime.isPreview ? "⌘ ⇧ ⌥ C（隔离验收）" : "⌘ ⇧ C")
-                LabeledContent("搜索", value: "⌘ K")
-                LabeledContent("保存", value: "⌘ S")
-                LabeledContent("复制并收起", value: "⌘ ↵")
-            }
+                Text("点击卡片正文阅读，卡片上的复制按钮直接复制并保持窗口打开。")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            } header: { Text("浏览与复制") }
+            CabinetSettingsSection {
+                shortcut("唤出或收起", keys: CabinetRuntime.isPreview ? "⌘ ⇧ ⌥ C" : "⌘ ⇧ C")
+                shortcut("搜索", keys: "⌘ K")
+                shortcut("保存", keys: "⌘ S")
+                shortcut("复制并收起", keys: "⌘ ↵")
+            } header: { Text("键盘操作") }
         }
-        .formStyle(.grouped)
-        .padding(24)
+    }
+
+    private func shortcut(_ title: String, keys: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(keys).font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// 设置各页共用资料柜的字号、行距、轻边框和阅读底色。
+struct CabinetSettingsPage<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) { content }
+                .frame(maxWidth: .infinity, alignment: .leading).padding(26)
+        }
+        .font(.system(size: 12)).controlSize(.regular)
+        .buttonStyle(.bordered)
+    }
+}
+
+struct CabinetSettingsSection<Content: View, Header: View>: View {
+    let content: Content
+    let header: Header
+    init(@ViewBuilder content: () -> Content, @ViewBuilder header: () -> Header) {
+        self.content = content(); self.header = header()
+    }
+    init(@ViewBuilder content: () -> Content) where Header == EmptyView {
+        self.content = content(); self.header = EmptyView()
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header.font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 16) { content }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+                .background(.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(.primary.opacity(0.09), lineWidth: 0.5))
+        }
     }
 }
 

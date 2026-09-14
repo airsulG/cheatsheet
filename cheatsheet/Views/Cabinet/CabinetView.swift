@@ -21,7 +21,9 @@ struct CabinetView: View {
                 detail.frame(minWidth: 310, maxWidth: .infinity)
             }
         }
+        .padding(.top, 28)
         .background(CabinetMaterial())
+        .ignoresSafeArea(.container, edges: .top)
         .preferredColorScheme(appearance == "dark" ? .dark : .light)
         .environment(\.locale, Locale(identifier: "zh_CN"))
         .tint(Color(red: 0.38, green: 0.61, blue: 0.85))
@@ -81,8 +83,6 @@ struct CabinetView: View {
                 }
             } label: { Image(systemName: "slider.horizontal.3").frame(width: 18) }
                 .menuStyle(.borderlessButton).fixedSize().help("外观、导入与设置")
-            Button { model.requestClose() } label: { Image(systemName: "xmark").foregroundStyle(.secondary) }
-                .buttonStyle(.plain).help("收起 esc")
         }
         .padding(.horizontal, 22).frame(height: 68)
     }
@@ -127,8 +127,6 @@ struct CabinetView: View {
                                         Spacer()
                                     }.foregroundStyle(.secondary)
                                 }.buttonStyle(.plain)
-                                Menu { groupMenu(group) } label: { Image(systemName: "ellipsis") }
-                                    .menuStyle(.borderlessButton).fixedSize()
                             }.font(.system(size: 11)).padding(.horizontal, 10).padding(.top, 8)
                                 .contextMenu { groupMenu(group) }
                             if !collapsed.contains(group.id?.uuidString ?? "") || !model.tagQuery.isEmpty {
@@ -183,10 +181,8 @@ struct CabinetView: View {
                     Text(tag.name ?? "").lineLimit(1).help(tag.name ?? "")
                     Spacer(minLength: 2)
                     Text("\(model.tagCounts[tag.objectID] ?? 0)").font(.system(size: 10).monospacedDigit()).foregroundStyle(.tertiary)
-                }.padding(.leading, 12).frame(height: 30).contentShape(Rectangle())
+                }.padding(.horizontal, 12).frame(height: 30).contentShape(Rectangle())
             }.buttonStyle(.plain)
-            Menu { tagMenu(tag) } label: { Image(systemName: "ellipsis").foregroundStyle(.tertiary) }
-                .menuStyle(.borderlessButton).fixedSize().padding(.horizontal, 7)
         }.font(.system(size: 11))
             .background(model.location == .tag(tag.objectID) ? palette.selection : .clear, in: RoundedRectangle(cornerRadius: 5))
             .contextMenu { tagMenu(tag) }
@@ -262,6 +258,7 @@ struct CabinetView: View {
     }
 
     private func resultRow(_ item: CabinetItem) -> some View {
+        VStack(spacing: 0) {
         Button { model.select(item.id) } label: {
             VStack(alignment: .leading, spacing: 10) {
                 if let data = item.image, let image = NSImage(data: data) {
@@ -289,9 +286,22 @@ struct CabinetView: View {
                     }.font(.system(size: 10)).foregroundStyle(.tertiary)
                 }
             }.frame(maxWidth: .infinity, alignment: .leading).padding(14)
-                .background(model.selection == item.id ? palette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
                 .contentShape(Rectangle())
         }.buttonStyle(.plain)
+            HStack {
+                Spacer()
+                Button {
+                    if model.select(item.id) { model.copy(close: false) }
+                } label: {
+                    Label("复制", systemImage: "doc.on.doc")
+                        .font(.system(size: 10, weight: .medium))
+                        .padding(.horizontal, 8).padding(.vertical, 5)
+                        .background(palette.input, in: RoundedRectangle(cornerRadius: 5))
+                }.buttonStyle(.plain).help("复制内容，保持窗口打开")
+                    .accessibilityLabel("复制：\(item.title)")
+            }.padding(.horizontal, 12).padding(.bottom, 10)
+        }
+            .background(model.selection == item.id ? palette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
             .contextMenu {
                 Button("复制") { if model.select(item.id) { model.copy(close: false) } }
                 Button("复制并收起") { if model.select(item.id) { model.copy(close: true) } }
