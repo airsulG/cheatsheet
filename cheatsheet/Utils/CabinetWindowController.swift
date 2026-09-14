@@ -40,6 +40,7 @@ final class CabinetWindowController: NSObject, NSWindowDelegate {
         panel?.orderOut(nil)
         previousApp?.activate(options: [.activateIgnoringOtherApps])
     }
+    func canTerminate() -> Bool { model?.allowLeaving() ?? true }
     private func ensurePanel() {
         guard panel == nil else { return }
         let context = PersistenceController.shared.container.viewContext
@@ -64,8 +65,12 @@ final class CabinetWindowController: NSObject, NSWindowDelegate {
         panel.hasShadow = true
         panel.isMovableByWindowBackground = true
         panel.minSize = NSSize(width: 760, height: 560)
-        panel.contentViewController = NSHostingController(rootView: CabinetView(model: model)
+        let hosting = NSHostingController(rootView: CabinetView(model: model)
             .clipShape(RoundedRectangle(cornerRadius: 12)))
+        hosting.sizingOptions = [.minSize]
+        panel.contentViewController = hosting
+        let available = NSScreen.main?.visibleFrame.size ?? NSSize(width: 1280, height: 900)
+        panel.setContentSize(NSSize(width: min(1140, available.width - 60), height: min(740, available.height - 80)))
         panel.setFrameAutosaveName(CabinetRuntime.isPreview ? "CabinetPreview" : "Cabinet")
         if panel.frame.width > (NSScreen.main?.visibleFrame.width ?? 1200) {
             panel.setContentSize(NSSize(width: 1000, height: 650))

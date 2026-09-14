@@ -46,6 +46,9 @@ struct cheatsheetApp: App {
 }
 
 final class CabinetAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        CabinetWindowController.shared.canTerminate() ? .terminateNow : .terminateCancel
+    }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         CabinetWindowController.shared.show()
         return true

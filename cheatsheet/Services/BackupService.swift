@@ -148,7 +148,17 @@ final class BackupService {
             for record in archive.groups ?? [] {
                 let group = TagGroup(context: context)
                 group.id = UUID()
-                group.name = record.name
+                let baseName = record.name.isEmpty ? "导入的分组" : record.name
+                var candidate = baseName
+                var suffix = 2
+                let names = NSFetchRequest<TagGroup>(entityName: "TagGroup")
+                while true {
+                    names.predicate = NSPredicate(format: "name ==[cd] %@", candidate)
+                    if try context.count(for: names) == 0 { break }
+                    candidate = "\(baseName) (\(suffix))"
+                    suffix += 1
+                }
+                group.name = candidate
                 group.order = record.order
                 group.deletedAt = record.deletedAt
                 importedGroups[record.id] = group
@@ -208,7 +218,8 @@ final class BackupService {
             return BackupImportResult(
                 categoryCount: categoryCount,
                 commandCount: commandCount,
-                favoriteCount: favoriteCount
+                favoriteCount: favoriteCount,
+                groupCount: importedGroups.count
             )
         }
     }

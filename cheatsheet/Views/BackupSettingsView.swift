@@ -100,7 +100,7 @@ struct BackupSettingsView: View {
                     }
                     .disabled(isWorking)
 
-                    Text("导入会追加新分类，不会删除或覆盖现有分类。若分类重名，会自动在名称后加序号。")
+                    Text("导入会追加标签、分组与片段，不会覆盖现有数据；重名时会加序号。新备份也包含无标签片段与图片。")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 } header: {
@@ -143,7 +143,7 @@ struct BackupSettingsView: View {
                 importPendingFile()
             }
         } message: {
-            Text("导入会追加新分类和命令，不会删除现有数据。")
+            Text("导入会追加标签、分组与片段，不会删除现有数据。")
         }
     }
 
@@ -218,7 +218,7 @@ struct BackupSettingsView: View {
 
         do {
             let result = try BackupService(context: context).importArchive(from: url)
-            resultMessage = "已导入 \(result.categoryCount) 个分类、\(result.commandCount) 条内容，其中 \(result.favoriteCount) 条收藏"
+            resultMessage = "已导入 \(result.categoryCount) 个标签、\(result.groupCount) 个分组、\(result.commandCount) 个片段，其中 \(result.favoriteCount) 个常用"
             pendingImportURL = nil
         } catch {
             errorMessage = "导入失败：\(error.localizedDescription)"

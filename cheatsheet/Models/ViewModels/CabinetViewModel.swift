@@ -73,7 +73,7 @@ final class CabinetViewModel: ObservableObject {
         reload()
         observer = NotificationCenter.default.addObserver(forName: .NSManagedObjectContextObjectsDidChange,
             object: context, queue: .main) { [weak self] note in
-            guard [NSInsertedObjectsKey, NSUpdatedObjectsKey, NSDeletedObjectsKey, NSInvalidatedAllObjectsKey]
+            guard [NSInsertedObjectsKey, NSUpdatedObjectsKey, NSDeletedObjectsKey, NSRefreshedObjectsKey, NSInvalidatedAllObjectsKey]
                 .contains(where: { note.userInfo?[$0] != nil }) else { return }
             Task { @MainActor [weak self] in
                 guard let self, !self.refreshScheduled else { return }
@@ -89,6 +89,12 @@ final class CabinetViewModel: ObservableObject {
     }
 
     var selected: CabinetItem? { items.first { $0.id == selection } }
+    var collectionLabel: String {
+        guard case .history(let history) = selected, let id = history.id else { return "保存为片段" }
+        let request: NSFetchRequest<Command> = Command.fetchRequest()
+        request.predicate = NSPredicate(format: "originID == %@", id as CVarArg)
+        return ((try? context.count(for: request)) ?? 0) > 0 ? "查看已存片段" : "保存为片段"
+    }
     var dirty: Bool { draft != originalDraft }
     var heading: String {
         switch location {
@@ -175,16 +181,19 @@ final class CabinetViewModel: ObservableObject {
         }
     }
 
-    func navigate(_ target: CabinetLocation) {
-        guard allowLeaving() else { return }
+    @discardableResult
+    func navigate(_ target: CabinetLocation) -> Bool {
+        guard allowLeaving() else { return false }
         contexts[location] = (query, selection)
         draft = nil; originalDraft = nil
         location = target
         query = contexts[target]?.0 ?? ""
         selection = contexts[target]?.1
         reload()
+        return true
     }
     func search(_ text: String) {
+        guard text != query else { return }
         guard !dirty || allowLeaving() else { return }
         draft = nil; originalDraft = nil; query = text; reload()
     }
@@ -257,6 +266,15 @@ final class CabinetViewModel: ObservableObject {
         }
     }
     func requestClose() { if allowLeaving() { closeWindow?() } }
+    func deleteHistory(_ history: ClipboardItem) {
+        let alert = NSAlert()
+        alert.messageText = "删除这条剪贴板记录？"
+        alert.informativeText = "已保存的片段会保留。原始记录删除后无法恢复。"
+        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: "删除记录")
+        guard alert.runModal() == .alertSecondButtonReturn else { return }
+        perform { context.delete(history); try context.save() }
+    }
     func setSort(_ value: String) {
         sort = value
         UserDefaults.standard.set(value, forKey: "cabinetSort")

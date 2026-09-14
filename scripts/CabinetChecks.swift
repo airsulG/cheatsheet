@@ -4,7 +4,7 @@ import CoreData
 
 @main
 struct CabinetChecks {
-    @MainActor static func main() throws {
+    @MainActor static func main() async throws {
         let modelURL = URL(fileURLWithPath: CommandLine.arguments[1])
         let model = NSManagedObjectModel(contentsOf: modelURL)!
         let legacy = NSManagedObjectModel(contentsOf: modelURL.appendingPathComponent("cheatsheet.mom"))!
@@ -21,6 +21,7 @@ struct CabinetChecks {
             d.shouldInferMappingModelAutomatically = true
             c.persistentStoreDescriptions = [d]
             c.loadPersistentStores { _, e in precondition(e == nil, "\(String(describing: e))") }
+            c.viewContext.automaticallyMergesChangesFromParent = true
             return c
         }
         let old = container(legacy, url: url)
@@ -123,6 +124,16 @@ struct CabinetChecks {
         print("PASS: original file URL, URL, RTF and HTML payloads survive copying")
         named.releaseGlobally()
         print("PASS: full-body tail search, exact copy on isolated pasteboard, clipboard query and selection restoration")
+        try context.save()
+        let worker = upgraded.newBackgroundContext()
+        try worker.performAndWait {
+            _ = ClipboardItem(context: worker, content: "后台剪贴板实时到达")
+            try worker.save()
+        }
+        try await Task.sleep(for: .milliseconds(250))
+        vm.search("后台剪贴板实时到达")
+        precondition(vm.items.count == 1 && vm.clipboardCount == 6)
+        print("PASS: background clipboard save merges on main and becomes searchable without reopening")
         let savedImageID = image.id
         context.reset()
         try upgraded.persistentStoreCoordinator.remove(upgraded.persistentStoreCoordinator.persistentStores[0])

@@ -23,6 +23,7 @@ struct CabinetView: View {
         }
         .background(CabinetMaterial())
         .preferredColorScheme(appearance == "dark" ? .dark : .light)
+        .environment(\.locale, Locale(identifier: "zh_CN"))
         .tint(Color(red: 0.38, green: 0.61, blue: 0.85))
         .frame(minWidth: 740, minHeight: 520)
         .onAppear { model.focusSearch = {
@@ -202,7 +203,7 @@ struct CabinetView: View {
             Divider()
             Button("新建分组并加入…") { createGroup(moving: tag) }
         }
-        Button("在标签中新建片段") { model.navigate(.tag(tag.objectID)); model.newSnippet() }
+        Button("在标签中新建片段") { if model.navigate(.tag(tag.objectID)) { model.newSnippet() } }
         Button("导入 JSON…") { openImport(tag) }
         Divider()
         Button("删除标签", role: .destructive) { model.perform { try model.store.trash(tag) } }
@@ -295,11 +296,16 @@ struct CabinetView: View {
                 Button("复制") { if model.select(item.id) { model.copy(close: false) } }
                 Button("复制并收起") { if model.select(item.id) { model.copy(close: true) } }
                 if case .snippet(let c) = item {
+                    if c.originID != nil {
+                        Button("返回剪贴板") { model.navigate(.clipboard) }
+                    }
                     Button("编辑") { if model.select(item.id) { model.edit() } }
                     Button(c.isFavorite ? "取消常用" : "设为常用") { model.perform { c.toggleFavorite(); try model.context.save() } }
                     Button("上移") { model.move(item, offset: -1) }
                     Button("下移") { model.move(item, offset: 1) }
                     Button("移到最近删除", role: .destructive) { model.perform { try model.store.trash(c) } }
+                } else if case .history(let history) = item {
+                    Button("删除这条记录…", role: .destructive) { model.deleteHistory(history) }
                 }
             }
     }
@@ -307,6 +313,10 @@ struct CabinetView: View {
         if !model.query.isEmpty, let range = item.body.range(of: model.query, options: [.caseInsensitive, .diacriticInsensitive]) {
             let start = item.body.index(range.lowerBound, offsetBy: -25, limitedBy: item.body.startIndex) ?? item.body.startIndex
             return (start == item.body.startIndex ? "" : "…") + String(item.body[start...].prefix(240))
+        }
+        if case .snippet(let command) = item, (command.name ?? "").isEmpty,
+           let newline = item.body.firstIndex(of: "\n") {
+            return String(item.body[item.body.index(after: newline)...].trimmingCharacters(in: .whitespacesAndNewlines).prefix(240))
         }
         return String(item.body.prefix(240))
     }
@@ -351,18 +361,20 @@ struct CabinetView: View {
                 Text(model.location == .clipboard ? "剪贴板原文" : "片段").foregroundStyle(.secondary)
                 Spacer()
                 if case .snippet(let c) = item {
+                    if c.originID != nil { Button("返回剪贴板") { model.navigate(.clipboard) } }
                     Button { model.perform { c.toggleFavorite(); try model.context.save() } } label: {
                         Image(systemName: c.isFavorite ? "star.fill" : "star")
                     }.help(c.isFavorite ? "取消常用" : "设为常用")
                     Button("编辑") { model.edit() }
                 } else {
-                    Button("保存为片段") { model.collect() }
+                    Button(model.collectionLabel) { model.collect() }
                 }
             }.font(.system(size: 11)).buttonStyle(.borderless).padding(.horizontal, 22).frame(height: 52)
             Divider()
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
+                        Color.clear.frame(height: 0).id("reader-top")
                         if !item.tags.isEmpty {
                             CabinetTagFlow(spacing: 6) { ForEach(item.tags) { CabinetTagLabel(name: $0.name ?? "") } }
                         }
@@ -385,7 +397,12 @@ struct CabinetView: View {
                 }.onChange(of: item.id, initial: true) { _, _ in
                     let lines = item.body.components(separatedBy: "\n")
                     let target = model.query.isEmpty ? 0 : lines.firstIndex { $0.localizedStandardContains(model.query) } ?? 0
-                    proxy.scrollTo(target, anchor: .top)
+                    if model.query.isEmpty { proxy.scrollTo("reader-top", anchor: .top) }
+                    else { proxy.scrollTo(target, anchor: .top) }
+                }.onChange(of: model.query) { _, query in
+                    let target = item.body.components(separatedBy: "\n").firstIndex { $0.localizedStandardContains(query) } ?? 0
+                    if query.isEmpty { proxy.scrollTo("reader-top", anchor: .top) }
+                    else { proxy.scrollTo(target, anchor: .top) }
                 }
             }
             Divider()

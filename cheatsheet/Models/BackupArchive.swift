@@ -77,6 +77,7 @@ struct BackupImportResult {
     let categoryCount: Int
     let commandCount: Int
     let favoriteCount: Int
+    var groupCount: Int = 0
 }
 
 enum BackupError: LocalizedError {
@@ -93,7 +94,7 @@ enum BackupError: LocalizedError {
         case .unsupportedVersion(let version):
             return "不支持的备份文件版本：\(version)"
         case .emptyArchive:
-            return "备份文件里没有可导入的分类"
+            return "备份文件里没有可导入的标签、分组或片段"
         case .invalidFolderBookmark:
             return "备份文件夹授权已失效，请重新选择文件夹"
         case .fileWriteNotAllowed:

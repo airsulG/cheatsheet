@@ -81,6 +81,10 @@ struct CabinetEditor: View {
             HStack {
                 Text(model.draft?.commandID == nil ? "新建片段" : "编辑片段")
                 Spacer()
+                if let id = model.draft?.commandID,
+                   let item = try? model.context.existingObject(with: id) as? Command, item.originID != nil {
+                    Button("返回剪贴板") { model.navigate(.clipboard) }.buttonStyle(.borderless)
+                }
                 Text(model.dirty ? "未保存" : "尚无修改").foregroundStyle(.tertiary)
             }.font(.system(size: 11)).foregroundStyle(.secondary).padding(.horizontal, 22).frame(height: 52)
             Divider()
