@@ -96,7 +96,7 @@ private enum AppSettingsSection: String, CaseIterable, Identifiable, Hashable {
     var title: String {
         switch self {
         case .shelf:
-            return "横条"
+            return "资料柜"
         case .clipboard:
             return "剪贴板"
         case .backup:
@@ -107,7 +107,7 @@ private enum AppSettingsSection: String, CaseIterable, Identifiable, Hashable {
     var systemImage: String {
         switch self {
         case .shelf:
-            return "rectangle.bottomthird.inset.filled"
+            return "sidebar.left"
         case .clipboard:
             return "doc.on.clipboard"
         case .backup:
@@ -117,33 +117,24 @@ private enum AppSettingsSection: String, CaseIterable, Identifiable, Hashable {
 }
 
 private struct ShelfSettingsView: View {
-    @AppStorage(ShelfCardSortSettings.storageKey)
-    private var sortModeRaw: String = ShelfCardSortSettings.defaultMode.rawValue
-
-    private var sortModeBinding: Binding<String> {
-        Binding(
-            get: { sortModeRaw },
-            set: { newValue in
-                sortModeRaw = newValue
-                ShelfCardSortSettings.mode = ShelfCardSortMode(rawValue: newValue) ?? ShelfCardSortSettings.defaultMode
-            }
-        )
-    }
+    @AppStorage("cabinetAppearance") private var appearance = "dark"
 
     var body: some View {
         Form {
             Section {
-                Picker("命令排序", selection: sortModeBinding) {
-                    ForEach(ShelfCardSortMode.allCases) { mode in
-                        Label(mode.label, systemImage: mode.systemImage)
-                            .tag(mode.rawValue)
-                    }
+                Picker("外观", selection: $appearance) {
+                    Text("深色").tag("dark")
+                    Text("浅色").tag("light")
                 }
                 .pickerStyle(.segmented)
 
-                Text("按标题排序是默认模式；切换为手动排序后，可以在横条里拖拽命令卡片调整顺序。")
+                Text("在列表标题旁切换最近修改、标题或手动顺序。片段右键菜单支持上移和下移。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                LabeledContent("唤出或收起", value: CabinetRuntime.isPreview ? "⌘ ⇧ ⌥ C（隔离验收）" : "⌘ ⇧ C")
+                LabeledContent("搜索", value: "⌘ K")
+                LabeledContent("保存", value: "⌘ S")
+                LabeledContent("复制并收起", value: "⌘ ↵")
             }
         }
         .formStyle(.grouped)

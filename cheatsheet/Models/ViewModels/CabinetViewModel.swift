@@ -15,11 +15,11 @@ enum CabinetItem: Identifiable {
     var title: String {
         switch self {
         case .snippet(let c): return c.displayTitle
-        case .history(let c): return CabinetContent.title(c.content ?? "", image: c.type == "image")
+        case .history(let c): return c.type == "image" ? "图片" : CabinetContent.title(c.content ?? "")
         }
     }
     var body: String {
-        switch self { case .snippet(let c): return c.content ?? ""; case .history(let c): return c.content ?? "" }
+        switch self { case .snippet(let c): return c.content ?? ""; case .history(let c): return c.type == "image" ? "" : c.content ?? "" }
     }
     var image: Data? {
         switch self { case .snippet(let c): return c.imageData; case .history(let c): return c.type == "image" ? c.data : nil }
@@ -58,6 +58,7 @@ final class CabinetViewModel: ObservableObject {
     @Published var sort = UserDefaults.standard.string(forKey: "cabinetSort") ?? "最近修改"
     var closeWindow: (() -> Void)?
     var focusSearch: (() -> Void)?
+    var searchHasFocus = false
     private var originalDraft: CabinetDraft?
     private var contexts: [CabinetLocation: (String, NSManagedObjectID?)] = [:]
     private var observer: NSObjectProtocol?
@@ -237,7 +238,9 @@ final class CabinetViewModel: ObservableObject {
         guard let item = selected else { return }
         pasteboard.clearContents()
         let success: Bool
-        if let data = item.image, let image = NSImage(data: data) {
+        if case .history(let history) = item {
+            success = ClipboardPayload.write(history, to: pasteboard)
+        } else if let data = item.image, let image = NSImage(data: data) {
             success = pasteboard.writeObjects([image])
             if !item.body.isEmpty { _ = pasteboard.setString(item.body, forType: .string) }
         } else { success = pasteboard.setString(item.body, forType: .string) }

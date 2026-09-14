@@ -22,8 +22,11 @@ struct CabinetMaterial: NSViewRepresentable {
     }
     func updateNSView(_ view: NSVisualEffectView, context: Context) {
         view.material = reduceTransparency ? .windowBackground : .sidebar
+        let desired: NSAppearance.Name = scheme == .dark ? .darkAqua : .aqua
         DispatchQueue.main.async {
-            view.window?.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+            if view.window?.appearance?.name != desired {
+                view.window?.appearance = NSAppearance(named: desired)
+            }
         }
     }
 }
@@ -220,7 +223,8 @@ struct CabinetTextEditor: NSViewRepresentable {
         if view.string != text && !view.hasMarkedText() { view.string = text }
         view.textColor = scheme == .dark ? .init(white: 0.91, alpha: 1) : .init(white: 0.12, alpha: 1)
         view.insertionPointColor = view.textColor ?? .labelColor
-        view.font = CabinetContent.isMonospaced(text) ? .monospacedSystemFont(ofSize: 13, weight: .regular) : .systemFont(ofSize: 14)
+        let font = CabinetContent.isMonospaced(text) ? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular) : NSFont.systemFont(ofSize: 14)
+        if view.font != font { view.font = font }
     }
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: CabinetTextEditor

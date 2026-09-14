@@ -44,7 +44,7 @@ final class CabinetStore {
                 return existing
             }
         }
-        return try save(nil, title: "", body: source.content ?? "", tags: [],
+        return try save(nil, title: "", body: source.type == "image" ? "" : source.content ?? "", tags: [],
                         image: source.type == "image" ? source.data : nil, origin: source.id)
     }
 

@@ -6,7 +6,7 @@ struct CabinetView: View {
     @ObservedObject var model: CabinetViewModel
     @AppStorage("cabinetAppearance") private var appearance = "dark"
     @FocusState private var searchFocused: Bool
-    @State private var collapsed: Set<NSManagedObjectID> = []
+    @State private var collapsed: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "cabinetCollapsedGroups") ?? [])
     @Environment(\.colorScheme) private var colorScheme
 
     private var palette: CabinetPalette { CabinetPalette(dark: appearance == "dark") }
@@ -25,7 +25,12 @@ struct CabinetView: View {
         .preferredColorScheme(appearance == "dark" ? .dark : .light)
         .tint(Color(red: 0.38, green: 0.61, blue: 0.85))
         .frame(minWidth: 740, minHeight: 520)
-        .onAppear { model.focusSearch = { searchFocused = true } }
+        .onAppear { model.focusSearch = {
+            searchFocused = false
+            DispatchQueue.main.async { searchFocused = true }
+        } }
+        .onChange(of: collapsed) { _, value in UserDefaults.standard.set(Array(value), forKey: "cabinetCollapsedGroups") }
+        .onChange(of: searchFocused) { _, value in model.searchHasFocus = value }
         .alert("未能完成操作", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("好", role: .cancel) { model.error = nil }
         } message: { Text(model.error ?? "") }
@@ -111,11 +116,12 @@ struct CabinetView: View {
                             model.tags.contains(where: { $0.group == group && matches($0) }) {
                             HStack {
                                 Button {
-                                    if collapsed.contains(group.objectID) { collapsed.remove(group.objectID) }
-                                    else { collapsed.insert(group.objectID) }
+                                    let key = group.id?.uuidString ?? ""
+                                    if collapsed.contains(key) { collapsed.remove(key) }
+                                    else { collapsed.insert(key) }
                                 } label: {
                                     HStack {
-                                        Image(systemName: collapsed.contains(group.objectID) ? "chevron.right" : "chevron.down").font(.system(size: 8, weight: .semibold))
+                                        Image(systemName: collapsed.contains(group.id?.uuidString ?? "") ? "chevron.right" : "chevron.down").font(.system(size: 8, weight: .semibold))
                                         Text(group.name ?? "").lineLimit(1)
                                         Spacer()
                                     }.foregroundStyle(.secondary)
@@ -124,7 +130,7 @@ struct CabinetView: View {
                                     .menuStyle(.borderlessButton).fixedSize()
                             }.font(.system(size: 11)).padding(.horizontal, 10).padding(.top, 8)
                                 .contextMenu { groupMenu(group) }
-                            if !collapsed.contains(group.objectID) || !model.tagQuery.isEmpty {
+                            if !collapsed.contains(group.id?.uuidString ?? "") || !model.tagQuery.isEmpty {
                                 ForEach(model.tags.filter { $0.group == group && (matches($0) || (group.name ?? "").localizedStandardContains(model.tagQuery)) }) { tagRow($0) }
                             }
                         }
@@ -272,7 +278,15 @@ struct CabinetView: View {
                         ForEach(item.tags) { tag in CabinetTagLabel(name: tag.name ?? "") }
                     }
                 }
-                if !item.source.isEmpty { Text(item.source).font(.system(size: 10)).foregroundStyle(.tertiary) }
+                if case .history(let record) = item {
+                    HStack(spacing: 5) {
+                        if let data = record.sourceAppIcon, let icon = NSImage(data: data) {
+                            Image(nsImage: icon).resizable().frame(width: 13, height: 13)
+                        }
+                        Text(item.source)
+                        if let date = record.createdAt { Text("·"); Text(date, style: .relative) }
+                    }.font(.system(size: 10)).foregroundStyle(.tertiary)
+                }
             }.frame(maxWidth: .infinity, alignment: .leading).padding(14)
                 .background(model.selection == item.id ? palette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
                 .contentShape(Rectangle())
@@ -303,7 +317,7 @@ struct CabinetView: View {
                 Text("删除标签不会删除片段；删除分组会将标签移到未分组。").font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(5)
                 ForEach(model.deleted, id: \.objectID) { object in
                     HStack {
-                        VStack(alignment: .leading, spacing: 4) {
+                        LazyVStack(alignment: .leading, spacing: 4) {
                             Text((object as? Command)?.displayTitle ?? object.value(forKey: "name") as? String ?? "")
                                 .font(.system(size: 12)).lineLimit(2)
                             Text(object is Category ? "标签" : object is TagGroup ? "分组" : "片段").font(.system(size: 10)).foregroundStyle(.secondary)

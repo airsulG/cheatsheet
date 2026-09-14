@@ -10,11 +10,12 @@ import AppKit
 
 @main
 struct cheatsheetApp: App {
+    @NSApplicationDelegateAdaptor(CabinetAppDelegate.self) private var appDelegate
     let persistenceController = PersistenceController.shared
     private let clipboardMonitor: ClipboardMonitor
 
     init() {
-        if !CabinetRuntime.isPreview { GlobalHotkeyManager.shared.register() }
+        GlobalHotkeyManager.shared.register(isPreview: CabinetRuntime.isPreview)
 
         // 使用后台上下文进行监控
         let backgroundContext = persistenceController.container.newBackgroundContext()
@@ -41,5 +42,12 @@ struct cheatsheetApp: App {
         Settings {
             EmptyView()
         }
+    }
+}
+
+final class CabinetAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        CabinetWindowController.shared.show()
+        return true
     }
 }

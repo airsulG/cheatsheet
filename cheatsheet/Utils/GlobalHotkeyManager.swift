@@ -22,7 +22,7 @@ class GlobalHotkeyManager {
 
     private init() {}
 
-    func register() {
+    func register(isPreview: Bool = false) {
         // 定义快捷键ID
         let hotKeyID = EventHotKeyID(signature: "cht1".fourChar(), id: 1)
 
@@ -30,7 +30,7 @@ class GlobalHotkeyManager {
         // kVK_ANSI_C is the key code for 'C'
         let keyCode = UInt32(kVK_ANSI_C)
         // cmdKey and shiftKey are modifier flags
-        let modifiers = UInt32(cmdKey | shiftKey)
+        let modifiers = UInt32(cmdKey | shiftKey | (isPreview ? optionKey : 0))
 
         // 1. 注册全局快捷键
         var gMyHotKeyRef: EventHotKeyRef?

@@ -74,7 +74,7 @@ struct ImportPanelView: View {
                     .fontWeight(.semibold)
                     .foregroundColor(.primary)
                 
-                Text("导入到分类：\(category.name ?? "未命名分类")")
+                Text("添加标签：\(category.name ?? "未命名标签")")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
