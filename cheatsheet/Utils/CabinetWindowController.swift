@@ -17,7 +17,7 @@ final class CabinetWindowController: NSObject, NSWindowDelegate {
     private var keyMonitor: Any?
 
     func toggle() {
-        if panel?.isVisible == true && panel?.isMiniaturized == false { model?.requestClose() }
+        if panel?.isKeyWindow == true && NSApp.isActive && panel?.isMiniaturized == false { model?.requestClose() }
         else { show() }
     }
     func show() {
@@ -56,8 +56,8 @@ final class CabinetWindowController: NSObject, NSWindowDelegate {
         panel.titlebarAppearsTransparent = true
         panel.titlebarSeparatorStyle = .none
         panel.appearance = NSAppearance(named: UserDefaults.standard.string(forKey: "cabinetAppearance") == "light" ? .aqua : .darkAqua)
-        panel.isFloatingPanel = true
-        panel.level = .floating
+        panel.isFloatingPanel = false
+        panel.level = .normal
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
