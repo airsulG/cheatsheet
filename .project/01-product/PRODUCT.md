@@ -1,6 +1,6 @@
 # PRODUCT
 
-## 当前方向：原生资料柜（Issue #7，已在本机接替旧版，尚未合并）
+## 当前方向：原生资料柜（Issue #7，已在本机接替旧版并通过用户验收）
 
 Karl 已授权将资料柜原型应用到正式 macOS App，技术路线保持 SwiftUI + AppKit + CoreData。资料柜成为主窗口，剪贴板与全部资料并列，常用是资料筛选；三栏分别承担导航、结果和全文阅读/编辑。快速复制并收起继续保留。专业冷静的深浅磨砂外观、较小的导航字号、上下排列的图片和说明是当前视觉基准。
 
@@ -20,7 +20,7 @@ Karl 已授权将资料柜原型应用到正式 macOS App，技术路线保持 S
 
 同日 Karl 确认视觉基本无问题，要求迁移旧数据，并明确选择“直接用新版接替旧版，保留旧版和迁移前备份以便回退”。因旧偏好未指定期限、默认 7 天会影响 114 条旧历史，Karl 另行选择永久保留。已退出旧版保存完整数据库目录、外置附件、偏好和旧 App；在副本迁移并逐字段比较后，安装 Release 新版到原 /Applications/cheatsheet.app，沿用原 bundle ID、原沙盒存储与 ⌘⇧C。70 个片段、19 个分类转标签、524 条历史及 79 张可解码图片完整保留，正式库只读核对和实际退出重启通过。数据不通过 JSON 重复导入，不与旧版并行双写；模拟入口仍保留但验收进程已退出。私人备份只留在本机，回退必须同时处理 App 与数据库，并保护迁移后的新增内容。
 
-实施及验收以 [Issue #7](https://github.com/airsulG/cheatsheet/issues/7) 为准；完整原型演变保存在 [原型原始记录](../04-artifacts/inputs/7/prototype-history.md)，其中被后续反馈替代的旧方向仅作历史证据。首轮原生实现及后续增量均在 codex/native-cabinet，App 实现为 5e17493，迁移检查工具为 e6cb3ab，详见 [正式数据迁移记录](../04-artifacts/verification/7/production-migration.md)。本机安装和旧数据迁移已完成；GitHub PR 尚未合并，对外发布未执行。
+实施及验收以 [Issue #7](https://github.com/airsulG/cheatsheet/issues/7) 为准；完整原型演变保存在 [原型原始记录](../04-artifacts/inputs/7/prototype-history.md)，其中被后续反馈替代的旧方向仅作历史证据。首轮原生实现及后续增量均在 codex/native-cabinet，App 实现为 5e17493，迁移检查工具为 e6cb3ab，详见 [正式数据迁移记录](../04-artifacts/verification/7/production-migration.md)。本机安装和旧数据迁移已完成；Karl 已确认“目前修改已经完成，可以合并”，代码合并结果以 [PR #8](https://github.com/airsulG/cheatsheet/pull/8) 为准，对外发布未执行。
 
 下文完整保留改版前的产品事实和问题背景；其中底部横条、单分类及旧设置分区描述已被上方资料柜方向替代，不作为新主界面的要求。
 
