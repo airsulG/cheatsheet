@@ -74,6 +74,7 @@ final class BackupService {
                 var tags = command.tags as? Set<Category> ?? []
                 if !command.tagsMigrated, let legacy = command.category { tags.insert(legacy) }
                 record.tagIDs = tags.compactMap(\.id)
+                record.pinnedTagIDs = (command.pinnedTags as? Set<Category> ?? []).intersection(tags).compactMap(\.id)
                 record.imageData = command.imageData
                 record.originID = command.originID
                 record.deletedAt = command.deletedAt
@@ -206,6 +207,8 @@ final class BackupService {
                 command.createdAt = record.createdAt
                 command.updatedAt = record.updatedAt
                 command.tags = NSSet(array: (record.tagIDs ?? []).compactMap { importedTags[$0] })
+                let importedMemberships = command.tags as? Set<Category> ?? []
+                command.pinnedTags = NSSet(set: Set((record.pinnedTagIDs ?? []).compactMap { importedTags[$0] }).intersection(importedMemberships))
                 command.tagsMigrated = true
                 command.imageData = record.imageData
                 command.originID = record.originID

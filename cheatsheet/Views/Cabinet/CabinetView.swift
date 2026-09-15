@@ -300,6 +300,7 @@ struct CabinetView: View {
     private func resultRow(_ item: CabinetItem) -> some View {
         let preview = model.rowPreview(for: item)
         let tags = item.tags
+        let pinned = (item.object as? Command).map { model.isPinnedInCurrentTag($0) } ?? false
         let rowHelp: String
         if case .snippet = item { rowHelp = "单击片段直接编辑，双击复制" }
         else { rowHelp = "单击查看原文，双击复制" }
@@ -323,6 +324,11 @@ struct CabinetView: View {
                     HStack(spacing: 4) {
                         ForEach(Array(tags.prefix(2))) { tag in CabinetTagLabel(name: tag.name ?? "").lineLimit(1) }
                         if tags.count > 2 { Text("+\(tags.count - 2)").font(.system(size: 10)).foregroundStyle(.secondary) }
+                        Spacer(minLength: 4)
+                        if pinned {
+                            Image(systemName: "pin.fill").font(.system(size: 10)).foregroundStyle(palette.accent)
+                                .help("已在当前标签置顶")
+                        }
                     }
                 }
                 if case .history(let record) = item {
@@ -331,7 +337,7 @@ struct CabinetView: View {
             }.frame(maxWidth: .infinity, alignment: .leading).padding(14).frame(height: 200)
                 .contentShape(Rectangle())
         }.buttonStyle(CabinetCardStyle(selected: model.selection == item.id, palette: palette)).help(rowHelp)
-            .accessibilityLabel("片段：\(preview.title)")
+            .accessibilityLabel("片段：\(preview.title)\(pinned ? "，已置顶" : "")")
             .contextMenu {
                 Button("复制") { if model.select(item.id) { model.copy(close: false) } }
                 Button("复制并收起") { if model.select(item.id) { model.copy(close: true) } }
@@ -340,6 +346,9 @@ struct CabinetView: View {
                         Button("返回剪贴板") { model.navigate(.clipboard) }
                     }
                     Button("编辑") { if model.select(item.id) { model.edit() } }
+                    if model.pinningTag(for: c) != nil {
+                        Button(model.isPinnedInCurrentTag(c) ? "取消此标签内置顶" : "在此标签置顶") { model.togglePin(c) }
+                    }
                     Button(c.isFavorite ? "取消常用" : "设为常用") { model.toggleFavorite(c) }
                     Button("上移") { model.move(item, offset: -1) }
                     Button("下移") { model.move(item, offset: 1) }
