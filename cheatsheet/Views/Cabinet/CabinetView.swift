@@ -266,12 +266,21 @@ struct CabinetView: View {
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 12)], spacing: 12) {
-                            ForEach(model.items) { item in
-                                resultRow(item).id(item.id)
+                    GeometryReader { viewport in
+                        ScrollView {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 12)], spacing: 12) {
+                                ForEach(model.items) { item in
+                                    resultRow(item).id(item.id)
+                                }
                             }
-                        }.padding(CabinetGrid.detailInset)
+                            .padding(CabinetGrid.detailInset)
+                            .frame(minHeight: viewport.size.height, alignment: .top)
+                            .background {
+                                Color.clear.contentShape(Rectangle()).onTapGesture {
+                                    if model.isDetailPresented { model.closeDetail(animated: true) }
+                                }
+                            }
+                        }
                     }
                     .onChange(of: model.selectionScrollRequest) { _, _ in
                         if let id = model.selection { proxy.scrollTo(id) }
@@ -296,18 +305,18 @@ struct CabinetView: View {
         else { rowHelp = "单击查看原文，双击复制" }
         return Button {
             if let onCardClick { onCardClick(item.id) }
-            else { model.openDetail(item.id, animated: true) }
+            else { model.toggleDetail(item.id, animated: true) }
         } label: {
             VStack(alignment: .leading, spacing: 8) {
                 if let data = item.image, let image = NSImage(data: data) {
-                    Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity).frame(height: 88)
+                    Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity).frame(height: 64)
                         .padding(6).background(palette.input, in: RoundedRectangle(cornerRadius: 4))
                 }
                 Text(preview.title).font(.system(size: 13, weight: preview.isDerivedTitle ? .regular : .medium))
                     .lineLimit(2).lineSpacing(5)
                 if !preview.excerpt.isEmpty {
                     Text(preview.excerpt).font(.system(size: 11, design: preview.isMonospaced ? .monospaced : .default))
-                        .foregroundStyle(.secondary).lineLimit(item.image == nil ? 4 : 1).lineSpacing(4)
+                        .foregroundStyle(.secondary).lineLimit(item.image == nil ? 6 : 1).lineSpacing(4)
                 }
                 Spacer(minLength: 0)
                 if !tags.isEmpty {
@@ -319,7 +328,7 @@ struct CabinetView: View {
                 if case .history(let record) = item {
                     CabinetClipboardSource(record: record)
                 }
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(16).frame(height: 232)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(14).frame(height: 200)
                 .contentShape(Rectangle())
         }.buttonStyle(.plain).help(rowHelp)
             .accessibilityLabel("片段：\(preview.title)")

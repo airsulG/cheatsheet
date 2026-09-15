@@ -15,7 +15,7 @@ final class CabinetCardInteraction {
         if let event, event.type == .leftMouseUp || event.type == .leftMouseDown {
             lastClick = (id, event.locationInWindow, event.timestamp, model.isDetailPresented, model.location, model.query)
         } else { lastClick = nil }
-        model.openDetail(id, animated: event != nil)
+        model.toggleDetail(id, animated: event != nil)
     }
 
     func handle(_ event: NSEvent) -> Bool {

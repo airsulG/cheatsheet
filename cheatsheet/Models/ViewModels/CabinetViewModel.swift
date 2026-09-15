@@ -263,6 +263,11 @@ final class CabinetViewModel: ObservableObject {
         editorFocusRequest += 1
     }
     @discardableResult
+    func toggleDetail(_ id: NSManagedObjectID, animated: Bool = false) -> Bool {
+        if isDetailPresented && selection == id { return closeDetail(animated: animated) }
+        return openDetail(id, animated: animated)
+    }
+    @discardableResult
     func openDetail(_ id: NSManagedObjectID, animated: Bool = false) -> Bool {
         guard select(id) else { return false }
         detailUsesMotion = animated; isDetailPresented = true

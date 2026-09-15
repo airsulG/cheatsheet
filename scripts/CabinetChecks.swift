@@ -276,11 +276,27 @@ struct CabinetChecks {
         clicks.activate(first.objectID, event: mouse(.leftMouseUp, 1, 5))
         precondition(!clicks.handle(mouse(.leftMouseDown, 2, 5 + NSEvent.doubleClickInterval / 2, x: 100)))
         precondition(!clicks.handle(mouse(.leftMouseDown, 2, 6 + NSEvent.doubleClickInterval)))
+        vm.openDetail(first.objectID)
+        vm.draft?.body = "再次点击当前卡片也要保存"
+        clicks.activate(first.objectID, event: mouse(.leftMouseUp, 1, 8))
+        precondition(!vm.isDetailPresented && first.content == "再次点击当前卡片也要保存",
+                     "A later click on the current card must save and close")
+        precondition(clicks.handle(mouse(.leftMouseDown, 2, 8 + NSEvent.doubleClickInterval / 2)))
+        precondition(board.string(forType: .string) == first.content && !vm.isDetailPresented,
+                     "Double-clicking the current card must still copy after the first click closes it")
+        _ = clicks.handle(mouse(.leftMouseUp, 2, 8 + NSEvent.doubleClickInterval / 2))
+        vm.openDetail(first.objectID)
+        vm.draft?.body = ""
+        clicks.activate(first.objectID, event: mouse(.leftMouseUp, 1, 10))
+        precondition(vm.isDetailPresented && vm.dirty, "Toggle must retain a draft that cannot be saved")
+        vm.draft?.body = "切换其他卡片前保存"
+        clicks.activate(second.objectID, event: mouse(.leftMouseUp, 1, 12))
+        precondition(vm.isDetailPresented && vm.selection == second.objectID && first.content == "切换其他卡片前保存")
         vm.newSnippet()
         precondition(vm.isDetailPresented && vm.draft?.commandID == nil)
         vm.escape()
         precondition(!vm.isDetailPresented && vm.snippetCount == 2)
-        print("PASS: grid default, immediate drawer open, close/save/failure recovery, navigation/search dismissal, double-click source routing, pointer/time boundaries and blank-new dismissal")
+        print("PASS: grid default, immediate drawer open, repeat-click toggle with save/failure protection, other-card switch, navigation/search dismissal, double-click source routing, pointer/time boundaries and blank-new dismissal")
     }
 
     @MainActor static func checkReader(itemID: NSManagedObjectID, otherID: NSManagedObjectID) {
