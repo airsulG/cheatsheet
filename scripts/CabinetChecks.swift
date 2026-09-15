@@ -194,6 +194,7 @@ struct CabinetChecks {
         failureContext.rejectSave = false
         precondition(failingVM.autosave() && intact.content == "必须留在草稿中的修改")
         print("PASS: simulated disk save failure preserves draft, restores the record and supports retry")
+        try await checkEditableText(model: failingVM)
         vm.search("")
         vm.select(image.objectID)
         vm.draft?.body = "自动保存后重启仍保留"
@@ -206,6 +207,29 @@ struct CabinetChecks {
         precondition(persisted.count == 4 && persisted.contains { $0.id == savedImageID && $0.imageData == imageData && $0.content == "自动保存后重启仍保留" })
         print("PASS: disk store closes and reopens with image and multi-tag assets intact")
         print("Isolated evidence store: \(directory.path)")
+    }
+
+    @MainActor static func checkEditableText(model: CabinetViewModel) async throws {
+        let host = NSHostingView(rootView: CabinetEditor(model: model, palette: CabinetPalette(dark: true)))
+        host.frame = NSRect(x: 0, y: 0, width: 500, height: 540)
+        host.layoutSubtreeIfNeeded()
+        @MainActor func find(_ root: NSView) -> CabinetEditableTextView? {
+            if let text = root as? CabinetEditableTextView { return text }
+            return root.subviews.lazy.compactMap { find($0) }.first
+        }
+        let view = find(host)!
+        let coordinator = view.delegate as! CabinetTextEditor.Coordinator
+        let original = model.draft!.body
+        view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
+        view.setMarkedText("sheji", selectedRange: NSRange(location: 5, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: view))
+        precondition(view.hasMarkedText() && model.draft?.body == original, "Uncommitted composition must not overwrite the draft")
+        view.insertText("设计", replacementRange: NSRange(location: NSNotFound, length: 0))
+        coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: view))
+        precondition(!view.hasMarkedText() && model.draft?.body == original + "设计")
+        _ = view.resignFirstResponder()
+        precondition(!model.dirty && model.saveStatus == "已保存" && model.selected?.body == original + "设计")
+        print("PASS: native editor excludes marked IME text, commits Chinese and saves through its real blur callback")
     }
 
     @MainActor static func checkReader(itemID: NSManagedObjectID, otherID: NSManagedObjectID) {
@@ -253,6 +277,13 @@ struct CabinetChecks {
     }
 
     @MainActor static func checkRefresh(container: NSPersistentContainer) async throws {
+        @MainActor func waitFor(_ condition: () -> Bool) async throws {
+            for _ in 0..<100 {
+                if condition() { return }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            precondition(condition(), "Timed out waiting for Core Data merge and coalesced UI refresh")
+        }
         let context = container.viewContext
         let store = CabinetStore(context: context)
         let a = try store.createTag("标签 A")
@@ -276,22 +307,22 @@ struct CabinetChecks {
         _ = try store.save(original, title: "", body: "更新后的首行\n新正文", tags: [b])
         original.isFavorite = true
         try context.save()
-        try await Task.sleep(for: .milliseconds(150))
+        try await waitFor { vm.items.isEmpty && vm.tagCounts[b.objectID] == 1 }
         precondition(vm.items.isEmpty && vm.tagCounts[a.objectID] == nil && vm.tagCounts[b.objectID] == 1)
         precondition(vm.favoriteCount == 1 && vm.rowPreview(for: .snippet(original)).title == "更新后的首行")
         vm.navigate(.tag(b.objectID))
         precondition(vm.items.count == 1)
         try store.trash(original)
-        try await Task.sleep(for: .milliseconds(150))
+        try await waitFor { vm.items.isEmpty && vm.snippetCount == 0 }
         precondition(vm.items.isEmpty && vm.snippetCount == 0 && vm.favoriteCount == 0)
         try store.restore(original)
-        try await Task.sleep(for: .milliseconds(150))
+        try await waitFor { vm.items.count == 1 && vm.snippetCount == 1 }
         precondition(vm.items.count == 1 && vm.snippetCount == 1)
         try store.trash(b)
-        try await Task.sleep(for: .milliseconds(150))
+        try await waitFor { vm.location == .all && vm.tags.count == 1 }
         precondition(vm.location == .all && vm.tags.count == 1 && vm.snippetCount == 1)
         try store.restore(b)
-        try await Task.sleep(for: .milliseconds(150))
+        try await waitFor { vm.tagCounts[b.objectID] == 1 }
         precondition(vm.tagCounts[b.objectID] == 1)
         let tagID = a.objectID
         let worker = container.newBackgroundContext()
@@ -299,7 +330,7 @@ struct CabinetChecks {
             let target = try worker.existingObject(with: tagID) as! cheatsheet.Category
             _ = try CabinetStore(context: worker).save(nil, title: "", body: "后台新增片段", tags: [target])
         }
-        try await Task.sleep(for: .milliseconds(150))
+        try await waitFor { vm.snippetCount == 2 }
         vm.navigate(.tag(a.objectID))
         precondition(vm.items.count == 1 && vm.items[0].body == "后台新增片段" && vm.snippetCount == 2)
         let editingID = vm.selection!
@@ -339,7 +370,7 @@ struct CabinetChecks {
     }
 }
 
-private final class RejectingSaveContext: NSManagedObjectContext {
+private final class RejectingSaveContext: NSManagedObjectContext, @unchecked Sendable {
     var rejectSave = false
     override func save() throws {
         if rejectSave { throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteOutOfSpaceError) }

@@ -95,7 +95,11 @@ struct CabinetEditor: View {
     @FocusState private var titleFocused: Bool
 
     private var draft: Binding<CabinetDraft> {
-        Binding(get: { model.draft ?? CabinetDraft() }, set: { model.draft = $0 })
+        let session = model.editorSession
+        return Binding(get: { model.draft ?? CabinetDraft() }, set: {
+            guard model.editorSession == session else { return }
+            model.draft = $0
+        })
     }
     var body: some View {
         VStack(spacing: 0) {
