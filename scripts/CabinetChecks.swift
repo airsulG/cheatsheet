@@ -1,5 +1,6 @@
 import AppKit
 import CoreData
+import SwiftUI
 @testable import cheatsheet
 
 @main
@@ -142,6 +143,7 @@ struct CabinetChecks {
         vm.moveSelection(-1)
         precondition(vm.selectionScrollRequest == scrollBefore + 1, "Keyboard selection should remain visible")
         _ = NSApplication.shared
+        checkReader(itemID: command.objectID, otherID: untagged.objectID)
         let searchWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 80),
                                     styleMask: [.titled], backing: .buffered, defer: false)
         let field = NSTextField(frame: NSRect(x: 20, y: 25, width: 320, height: 25))
@@ -181,5 +183,49 @@ struct CabinetChecks {
         precondition(persisted.count == 4 && persisted.contains { $0.id == savedImageID && $0.imageData == imageData })
         print("PASS: disk store closes and reopens with image and multi-tag assets intact")
         print("Isolated evidence store: \(directory.path)")
+    }
+
+    @MainActor static func checkReader(itemID: NSManagedObjectID, otherID: NSManagedObjectID) {
+        let text = "中文与 👩🏽‍💻 Café\r\n\n" + String(repeating: "长文跨行选择和宽度变化后仍应保留完整正文。\n", count: 240) + "末尾关键字"
+        let reader = CabinetReaderScrollView()
+        reader.frame = NSRect(x: 0, y: 0, width: 600, height: 360)
+        reader.update(itemID: itemID, text: text, query: "末尾关键字", dark: true, header: AnyView(Text("元信息")))
+        reader.layoutSubtreeIfNeeded()
+        let view = reader.content.textView
+        precondition(view.frame.minY > 60, "Header height and spacing must be reserved above the body")
+        precondition(view.string == text && !view.isEditable && view.isSelectable)
+        precondition(reader.content.matches.count == 1)
+        let match = reader.content.matches[0]
+        precondition((text as NSString).substring(with: match) == "末尾关键字")
+        precondition(view.textStorage?.attribute(.backgroundColor, at: match.location, effectiveRange: nil) != nil)
+        precondition(reader.contentView.bounds.minY > 0, "A tail match must scroll into view")
+        let glyphs = view.layoutManager!.glyphRange(forCharacterRange: match, actualCharacterRange: nil)
+        let rect = view.layoutManager!.boundingRect(forGlyphRange: glyphs, in: view.textContainer!)
+        precondition(reader.contentView.bounds.intersects(reader.content.convert(rect, from: view)), "Matched text must be visible")
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        view.setSelectedRange(NSRange(location: 0, length: (text as NSString).length))
+        let textType = view.writablePasteboardTypes[0]
+        precondition(view.writeSelection(to: pasteboard, types: [textType]))
+        precondition(pasteboard.string(forType: textType) == text, "Cross-line copy must preserve original Unicode and newlines")
+        let selected = view.selectedRange()
+        let scrollPosition = reader.contentView.bounds.origin
+        reader.update(itemID: itemID, text: text, query: "末尾关键字", dark: false, header: AnyView(Text("元信息")))
+        reader.layoutSubtreeIfNeeded()
+        precondition(view.selectedRange() == selected && reader.contentView.bounds.origin == scrollPosition,
+                     "Unrelated updates and appearance changes must preserve selection and reading position")
+        let wideHeight = view.frame.height
+        reader.frame.size.width = 250
+        reader.needsLayout = true
+        reader.layoutSubtreeIfNeeded()
+        precondition(view.frame.height > wideHeight, "Narrow columns must wrap and expand the document")
+        reader.update(itemID: otherID, text: "短文", query: "", dark: true, header: AnyView(EmptyView()))
+        reader.layoutSubtreeIfNeeded()
+        precondition(view.string == "短文" && view.selectedRange().length == 0 && reader.contentView.bounds.minY == 0)
+        precondition(reader.content.matches.isEmpty)
+        let unicodeMatches = CabinetReaderDocument.matchRanges(in: "👩🏽‍💻 Café\r\nCAFE", query: "cafe")
+        precondition(unicodeMatches.count == 2)
+        precondition(("👩🏽‍💻 Café\r\nCAFE" as NSString).substring(with: unicodeMatches[0]) == "Café")
+        print("PASS: continuous reader preserves cross-line Unicode copy, tail-match highlight and visibility, reading position, wrapping and item reset")
     }
 }

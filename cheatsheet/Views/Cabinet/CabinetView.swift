@@ -354,7 +354,7 @@ struct CabinetView: View {
             if model.draft != nil {
                 CabinetEditor(model: model, palette: palette)
             } else if let item = model.selected {
-                reader(item).id(item.id)
+                reader(item)
             } else {
                 VStack(spacing: 14) {
                     Image(systemName: "doc.text").font(.system(size: 32)).foregroundStyle(.tertiary)
@@ -380,10 +380,9 @@ struct CabinetView: View {
                 }
             }.font(.system(size: 11)).buttonStyle(.borderless).padding(.horizontal, 22).frame(height: 52)
             Divider()
-            ScrollViewReader { proxy in
-                ScrollView {
+            CabinetReader(itemID: item.id, text: item.body, query: model.query,
+                          dark: appearance == "dark", header: AnyView(
                     VStack(alignment: .leading, spacing: 20) {
-                        Color.clear.frame(height: 0).id("reader-top")
                         if case .history(let record) = item { CabinetClipboardSource(record: record) }
                         if !item.tags.isEmpty {
                             CabinetTagFlow(spacing: 6) { ForEach(item.tags) { CabinetTagLabel(name: $0.name ?? "") } }
@@ -394,27 +393,8 @@ struct CabinetView: View {
                         if let data = item.image, let image = NSImage(data: data) {
                             Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity)
                         }
-                        VStack(alignment: .leading, spacing: 4) {
-                        ForEach(Array(item.body.components(separatedBy: "\n").enumerated()), id: \.offset) { index, line in
-                            Text(line.isEmpty ? " " : line)
-                                .font(.system(size: 14, design: CabinetContent.isMonospaced(item.body) ? .monospaced : .default))
-                                .lineSpacing(7).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                                .background(!model.query.isEmpty && line.localizedStandardContains(model.query) ? Color.accentColor.opacity(0.13) : .clear)
-                                .id(index)
-                        }
-                        }
-                    }.frame(maxWidth: .infinity, alignment: .leading).padding(28)
-                }.onChange(of: item.id, initial: true) { _, _ in
-                    let lines = item.body.components(separatedBy: "\n")
-                    let target = model.query.isEmpty ? 0 : lines.firstIndex { $0.localizedStandardContains(model.query) } ?? 0
-                    if model.query.isEmpty { proxy.scrollTo("reader-top", anchor: .top) }
-                    else { proxy.scrollTo(target, anchor: .top) }
-                }.onChange(of: model.query) { _, query in
-                    let target = item.body.components(separatedBy: "\n").firstIndex { $0.localizedStandardContains(query) } ?? 0
-                    if query.isEmpty { proxy.scrollTo("reader-top", anchor: .top) }
-                    else { proxy.scrollTo(target, anchor: .top) }
-                }
-            }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+            ))
             Divider()
             HStack(spacing: 12) {
                 Text(model.feedback).font(.system(size: 10)).foregroundStyle(.secondary)
