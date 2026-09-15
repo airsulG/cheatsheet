@@ -271,6 +271,9 @@ struct CabinetView: View {
     private func resultRow(_ item: CabinetItem) -> some View {
         let preview = model.rowPreview(for: item)
         let tags = item.tags
+        let rowHelp: String
+        if case .snippet = item { rowHelp = "单击片段直接编辑，双击复制" }
+        else { rowHelp = "单击查看原文，双击复制" }
         return Button { model.select(item.id, focusEditor: true) } label: {
             VStack(alignment: .leading, spacing: 10) {
                 if let data = item.image, let image = NSImage(data: data) {
@@ -293,7 +296,7 @@ struct CabinetView: View {
                 }
             }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
                 .contentShape(Rectangle())
-        }.buttonStyle(.plain).help("单击片段直接编辑，双击复制")
+        }.buttonStyle(.plain).help(rowHelp)
             .accessibilityLabel("片段：\(preview.title)")
             .simultaneousGesture(TapGesture(count: 2).onEnded {
                 if model.select(item.id) { model.copy(close: false) }
@@ -315,7 +318,10 @@ struct CabinetView: View {
                     Button(c.isFavorite ? "取消常用" : "设为常用") { model.perform { c.toggleFavorite(); try model.context.save() } }
                     Button("上移") { model.move(item, offset: -1) }
                     Button("下移") { model.move(item, offset: 1) }
-                    Button("移到最近删除", role: .destructive) { model.perform { try model.store.trash(c) } }
+                    Button("移到最近删除", role: .destructive) {
+                        guard model.allowLeaving() else { return }
+                        model.perform { try model.store.trash(c) }
+                    }
                 } else if case .history(let history) = item {
                     Button("删除这条记录…", role: .destructive) { model.deleteHistory(history) }
                 }
