@@ -31,3 +31,11 @@
 同日窗口与材质修订（4f0ec4d）：CabinetPanel 保留可激活、跨空间唤出和原生控制按钮，层级改为 normal，isFloatingPanel=false；toggle 仅在 App 活跃且资料柜为 key window 时收起，其余情况执行 show。右侧不再覆盖 palette.reader，透出根视图的 CabinetMaterial（NSVisualEffectView.sidebar / behindWindow）；NSTextView 与 NSScrollView 本身继续不画背景。CabinetClipboardSource 统一列表和原文区的来源信息，CabinetSourceIcon 缓存历史图标解码及本机 bundle 图标回退，不修改数据库或采集逻辑。
 
 正式迁移已于同日完成：先停止旧进程并保留整份 SQLite 目录与外置附件，在副本迁移验证；同 bundle ID Release 版本安装到原路径，NSPersistentContainer 接续原沙盒，migrateLegacyTags 补入多标签关系。校验工具对旧模型全部属性和关系建立快照，二进制字段按 SHA-256 核对；默认只迁移到不存在的副本目录，--compare-current 只读核对正式库保留所有旧记录，允许监控新增记录。用户已将本机历史保留设置改为永久，避免启动清理旧历史。正式运行与模拟预览仍由原有 CabinetRuntime.isPreview 分流，未新增第二套数据源或云同步。
+
+## 标签切换与长文阅读的性能边界
+
+[Issue #9](https://github.com/airsulG/cheatsheet/issues/9) 将阅读区改为 CabinetReader：NSScrollView 内的元信息与图片由 NSHostingView 呈现，正文由一个只读、可选择的 NSTextView 呈现。切换片段复用控件，保留全文与跨行选择；正文或宽度变化时才重新计算文字高度。字体只在正文变化时判断一次。搜索匹配使用正确的 UTF-16 范围高亮，并通过原生滚动定位到首个匹配；更换片段时从顶部或当前搜索的首个匹配开始，清空搜索回到顶部，同一片段的其他刷新保留选区和阅读位置。
+
+CabinetViewModel.reload 在初始化、数据变更和窗口重新显示时重建片段与标签归属，并一次性发布统计。普通导航、搜索和排序调用 refreshItems；标签通过缓存的对象 ID 索引找到片段，不重复查询和统计全库。缓存仍属于主线程 context，未跨队列传递托管对象。剪贴板数据更新仍通过自动合并后的通知刷新；数据刷新同时清除最多 256 项的卡片短文本缓存。标题提取遇到首条非空行就返回，不再预处理全文。
+
+`scripts/verify_core_behaviors.py --cabinet` 验证内容原样复制、末尾搜索定位、宽度变化、选区保留、标签与数据缓存更新，以及旧数据兼容。`scripts/verify_cabinet_performance.py` 比较相同正文的修复前逐行结构与当前原生阅读区，默认使用模拟数据，也可显式指定只读 SQLite 副本；只输出数量、长度和耗时。分项布局耗时不等于点击到屏幕更新的延迟，实际窗口行为需要另外验证。

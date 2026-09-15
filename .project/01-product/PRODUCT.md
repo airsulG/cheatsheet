@@ -22,6 +22,8 @@ Karl 已授权将资料柜原型应用到正式 macOS App，技术路线保持 S
 
 实施及验收以 [Issue #7](https://github.com/airsulG/cheatsheet/issues/7) 为准；完整原型演变保存在 [原型原始记录](../04-artifacts/inputs/7/prototype-history.md)，其中被后续反馈替代的旧方向仅作历史证据。首轮原生实现及后续增量均在 codex/native-cabinet，App 实现为 5e17493，迁移检查工具为 e6cb3ab，详见 [正式数据迁移记录](../04-artifacts/verification/7/production-migration.md)。本机安装和旧数据迁移已完成；Karl 已确认“目前修改已经完成，可以合并”，代码合并结果以 [PR #8](https://github.com/airsulG/cheatsheet/pull/8) 为准，对外发布未执行。
 
+2026-09-15 标签切换性能修订（[Issue #9](https://github.com/airsulG/cheatsheet/issues/9)）：阅读正文改为一个连续的原生文本控件，支持跨行选取，保留完整原文、搜索高亮与首个匹配定位；图片和说明仍上下排列。更换片段时从顶部或当前搜索的首个匹配开始，清空搜索回到顶部，同一片段的其他刷新保留选区和阅读位置。点击已选标签继续留在当前编辑状态。标签切换、搜索与排序使用已加载资料，资料发生变化后再更新数量和归属。具体性能、回归与本机更新证据见 [验证记录](../04-artifacts/verification/9/README.md)。
+
 下文完整保留改版前的产品事实和问题背景；其中底部横条、单分类及旧设置分区描述已被上方资料柜方向替代，不作为新主界面的要求。
 
 <<<<<<<<<<<<<<<<<<<< 00 Product Identity <<<<<<<<<<<<<<<<<<<<
