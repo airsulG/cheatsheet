@@ -49,6 +49,9 @@ final class CabinetViewModel: ObservableObject {
     @Published var selection: NSManagedObjectID?
     @Published var selectionScrollRequest = 0
     @Published var draft: CabinetDraft?
+    @Published private(set) var editorSession = UUID()
+    @Published private(set) var editorFocusRequest = 0
+    @Published private(set) var saveStatus = ""
     @Published var error: String?
     @Published var feedback = ""
     @Published var copiedItemID: NSManagedObjectID?
@@ -62,6 +65,7 @@ final class CabinetViewModel: ObservableObject {
     var focusSearch: (() -> Void)?
     var searchHasFocus = false
     private var originalDraft: CabinetDraft?
+    private var pinnedDraftID: NSManagedObjectID?
     private var contexts: [CabinetLocation: (String, NSManagedObjectID?)] = [:]
     private var observer: NSObjectProtocol?
     private var refreshScheduled = false
@@ -180,6 +184,8 @@ final class CabinetViewModel: ObservableObject {
                     ($0.name ?? "").localizedStandardContains(q) || ($0.content ?? "").localizedStandardContains(q) ||
                     $0.activeTags.contains { ($0.name ?? "").localizedStandardContains(q) }
                 } }
+                if let id = pinnedDraftID, let pinned = activeCommands.first(where: { $0.objectID == id }),
+                   !result.contains(where: { $0.objectID == id }) { result.append(pinned) }
                 result.sort {
                     switch sort {
                     case "标题": return $0.displayTitle.localizedStandardCompare($1.displayTitle) == .orderedAscending
@@ -190,23 +196,13 @@ final class CabinetViewModel: ObservableObject {
                 items = result.map(CabinetItem.snippet)
             }
             if !items.contains(where: { $0.id == selection }) { selection = items.first?.id }
+            synchronizeEditor()
         }
     }
 
     @discardableResult
     func allowLeaving() -> Bool {
-        guard dirty else { return true }
-        let alert = NSAlert()
-        alert.messageText = "保留正在编辑的内容？"
-        alert.informativeText = "保存后继续，或留在这里编辑。"
-        alert.addButton(withTitle: "继续编辑")
-        alert.addButton(withTitle: "保存并继续")
-        alert.addButton(withTitle: "放弃修改")
-        switch alert.runModal() {
-        case .alertSecondButtonReturn: return save()
-        case .alertThirdButtonReturn: draft = nil; originalDraft = nil; return true
-        default: return false
-        }
+        autosave()
     }
 
     @discardableResult
@@ -214,7 +210,7 @@ final class CabinetViewModel: ObservableObject {
         guard target != location else { return true }
         guard allowLeaving() else { return false }
         contexts[location] = (query, selection)
-        draft = nil; originalDraft = nil
+        draft = nil; originalDraft = nil; pinnedDraftID = nil
         location = target
         query = contexts[target]?.0 ?? ""
         selection = contexts[target]?.1
@@ -225,13 +221,18 @@ final class CabinetViewModel: ObservableObject {
     func search(_ text: String) {
         guard text != query else { return }
         guard !dirty || allowLeaving() else { return }
-        draft = nil; originalDraft = nil; query = text; refreshItems()
+        draft = nil; originalDraft = nil; pinnedDraftID = nil; query = text; refreshItems()
     }
     @discardableResult
-    func select(_ id: NSManagedObjectID) -> Bool {
-        if id == selection { return true }
+    func select(_ id: NSManagedObjectID, focusEditor: Bool = false) -> Bool {
+        if id == selection {
+            if focusEditor { editorFocusRequest += 1 }
+            return true
+        }
         guard allowLeaving() else { return false }
-        draft = nil; originalDraft = nil; selection = id
+        draft = nil; originalDraft = nil; pinnedDraftID = nil; selection = id
+        synchronizeEditor()
+        if focusEditor { editorFocusRequest += 1 }
         return true
     }
     func moveSelection(_ offset: Int) {
@@ -246,29 +247,53 @@ final class CabinetViewModel: ObservableObject {
         var value = CabinetDraft()
         if case .tag(let id) = location { value.tags = [id] }
         if location == .clipboard || location == .trash { navigate(.all) }
+        selection = nil; pinnedDraftID = nil
         draft = value; originalDraft = value
+        editorSession = UUID(); saveStatus = ""; editorFocusRequest += 1
     }
     func edit() {
-        guard case .snippet(let command) = selected, allowLeaving() else { return }
+        synchronizeEditor()
+        editorFocusRequest += 1
+    }
+    private func synchronizeEditor() {
+        // 后台刷新不能替换正在输入的内容，也不能给空白新片段填入旧片段。
+        if dirty || (draft != nil && draft?.commandID == nil) { return }
+        guard case .snippet(let command) = selected else {
+            draft = nil; originalDraft = nil; return
+        }
         let value = CabinetDraft(title: command.name ?? "", body: command.content ?? "",
             tags: Set(command.activeTags.map(\.objectID)), image: command.imageData, commandID: command.objectID)
+        if draft == value { return }
+        let changedItem = draft?.commandID != value.commandID
         draft = value; originalDraft = value
+        if changedItem { editorSession = UUID(); saveStatus = "" }
+    }
+    @discardableResult
+    func autosave(session: UUID? = nil) -> Bool {
+        if let session, session != editorSession { return true }
+        guard dirty, let value = draft else { return true }
+        // 离开尚未输入内容的新建页，不生成空记录。
+        if value.commandID == nil && value.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && value.image == nil && value.title.isEmpty { return true }
+        return save()
     }
     @discardableResult
     func save() -> Bool {
         guard let value = draft else { return true }
+        if !dirty && value.commandID != nil { return true }
         do {
             let command = try value.commandID.map { try context.existingObject(with: $0) as! Command }
+            if command?.deletedAt != nil { throw CabinetError.invalid("片段已移到最近删除，输入内容仍保留，请先恢复片段。") }
             let selectedTags = Set(value.tags.compactMap { try? context.existingObject(with: $0) as? Category })
             let saved = try store.save(command, title: value.title, body: value.body, tags: selectedTags, image: value.image)
-            draft = nil; originalDraft = nil
-            query = ""
-            if case .tag(let id) = location, !selectedTags.contains(where: { $0.objectID == id }) { location = .all }
-            if location == .favorites && !saved.isFavorite { location = .all }
-            selection = saved.objectID; reload()
-            feedback = "已保存"
+            var persisted = value
+            persisted.commandID = saved.objectID; persisted.title = saved.name ?? ""
+            draft = persisted; originalDraft = persisted
+            selection = saved.objectID; pinnedDraftID = saved.objectID
+            saveStatus = "已保存"; error = nil
+            reload()
+            // 通知刷新列表；不清空搜索，也不让失焦保存改变当前位置。
             return true
-        } catch { self.error = error.localizedDescription; return false }
+        } catch { saveStatus = "保存失败，内容已保留"; self.error = error.localizedDescription; return false }
     }
     func cancelEdit() {
         guard allowLeaving() else { return }

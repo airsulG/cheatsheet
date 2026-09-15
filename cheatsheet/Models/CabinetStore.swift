@@ -22,6 +22,8 @@ final class CabinetStore {
             throw CabinetError.invalid("请输入正文或添加图片")
         }
         let item = command ?? Command(context: context, name: "", content: "")
+        let keys = ["name", "content", "tags", "tagsMigrated", "category", "imageData", "originID", "updatedAt"]
+        let previous = item.dictionaryWithValues(forKeys: keys)
         item.name = title.trimmingCharacters(in: .whitespacesAndNewlines)
         item.content = body
         item.tags = NSSet(set: tags.filter { $0.deletedAt == nil })
@@ -30,7 +32,13 @@ final class CabinetStore {
         item.imageData = image
         item.originID = origin ?? item.originID
         item.updatedAt = Date()
-        try context.save()
+        do { try context.save() }
+        catch {
+            // 保存失败后只恢复本次写入，避免后续自动合并/迁移误存半成品。
+            if command == nil { context.delete(item) }
+            else { item.setValuesForKeys(previous) }
+            throw error
+        }
         return item
     }
 

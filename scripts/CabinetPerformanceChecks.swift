@@ -79,7 +79,7 @@ private struct PreviousReader: View {
         for target in [1, 73, 233, 1418] {
             guard let sample = candidates.min(by: { abs($0.lines - target) < abs($1.lines - target) }),
                   seen.insert(sample.lines).inserted else { continue }
-            var old: [Double] = [], native: [Double] = []
+            var old: [Double] = [], native: [Double] = [], editable: [Double] = []
             for iteration in 0..<8 {
                 let previous = autoreleasepool { measure {
                     let view = NSHostingView(rootView: PreviousReader(text: sample.text))
@@ -91,10 +91,23 @@ private struct PreviousReader: View {
                     view.arrange(width: 536)
                     precondition(view.textView.string == sample.text && view.textView.frame.height > 0)
                 } }
+                let editing = autoreleasepool { measure {
+                    let host = NSHostingView(rootView: CabinetTextEditor(text: .constant(sample.text)))
+                    host.frame = NSRect(x: 0, y: 0, width: 480, height: 500)
+                    host.layoutSubtreeIfNeeded()
+                    @MainActor func textView(in root: NSView) -> NSTextView? {
+                        if let text = root as? NSTextView { return text }
+                        return root.subviews.lazy.compactMap { textView(in: $0) }.first
+                    }
+                    let text = textView(in: host)!
+                    text.layoutManager!.ensureLayout(for: text.textContainer!)
+                    precondition(text.string == sample.text && text.isEditable)
+                } }
                 // 前两轮预热字体与框架；保留后六轮的实际测量。
-                if iteration >= 2 { old.append(previous); native.append(current) }
+                if iteration >= 2 { old.append(previous); native.append(current); editable.append(editing) }
             }
             print("LAYOUT lines=\(sample.lines) characters=\(sample.text.count) previous \(stats(old)); native \(stats(native))")
+            print("EDITABLE lines=\(sample.lines) \(stats(editable))")
         }
         precondition(!context.hasChanges && vm.error == nil)
         print("PASS: full document layout measured at 480pt text width; no database changes or system pasteboard writes")

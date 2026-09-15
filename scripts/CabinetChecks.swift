@@ -182,12 +182,28 @@ struct CabinetChecks {
         precondition(CabinetSourceIcon.image(data: nil, bundleID: "missing.app") == nil)
         print("PASS: clipboard source icon uses saved data, falls back to installed app, and tolerates missing apps")
         try await checkRefresh(container: container(model))
+        let failureContext = RejectingSaveContext(concurrencyType: .mainQueueConcurrencyType)
+        failureContext.persistentStoreCoordinator = container(model).persistentStoreCoordinator
+        let failureStore = CabinetStore(context: failureContext)
+        let intact = try failureStore.save(nil, title: "原标题", body: "磁盘写入失败前的正文", tags: [])
+        let failingVM = CabinetViewModel(context: failureContext, pasteboard: named)
+        failingVM.draft?.body = "必须留在草稿中的修改"
+        failureContext.rejectSave = true
+        precondition(!failingVM.autosave() && failingVM.dirty && failingVM.draft?.body == "必须留在草稿中的修改")
+        precondition(intact.content == "磁盘写入失败前的正文", "A failed save must restore the managed object's prior fields")
+        failureContext.rejectSave = false
+        precondition(failingVM.autosave() && intact.content == "必须留在草稿中的修改")
+        print("PASS: simulated disk save failure preserves draft, restores the record and supports retry")
+        vm.search("")
+        vm.select(image.objectID)
+        vm.draft?.body = "自动保存后重启仍保留"
+        precondition(vm.allowLeaving())
         let savedImageID = image.id
         context.reset()
         try upgraded.persistentStoreCoordinator.remove(upgraded.persistentStoreCoordinator.persistentStores[0])
         let reopened = container(model, url: url)
         let persisted = try reopened.viewContext.fetch(Command.fetchRequest())
-        precondition(persisted.count == 4 && persisted.contains { $0.id == savedImageID && $0.imageData == imageData })
+        precondition(persisted.count == 4 && persisted.contains { $0.id == savedImageID && $0.imageData == imageData && $0.content == "自动保存后重启仍保留" })
         print("PASS: disk store closes and reopens with image and multi-tag assets intact")
         print("Isolated evidence store: \(directory.path)")
     }
@@ -199,7 +215,7 @@ struct CabinetChecks {
         reader.update(itemID: itemID, text: text, query: "末尾关键字", dark: true, header: AnyView(Text("元信息")))
         reader.layoutSubtreeIfNeeded()
         let view = reader.content.textView
-        precondition(view.frame.minY > 60, "Header height and spacing must be reserved above the body")
+        precondition(view.frame.minY > CabinetGrid.detailInset + 20, "Header height and spacing must be reserved above the body")
         precondition(view.string == text && !view.isEditable && view.isSelectable)
         precondition(reader.content.matches.count == 1)
         let match = reader.content.matches[0]
@@ -286,10 +302,47 @@ struct CabinetChecks {
         try await Task.sleep(for: .milliseconds(150))
         vm.navigate(.tag(a.objectID))
         precondition(vm.items.count == 1 && vm.items[0].body == "后台新增片段" && vm.snippetCount == 2)
+        let editingID = vm.selection!
+        precondition(vm.draft?.commandID == editingID && !vm.dirty, "Selected snippets must be editable immediately")
+        let firstSession = vm.editorSession
+        vm.search("后台新增")
+        vm.draft?.body = "已自动保存的中文 👩🏽‍💻\n第二行"
+        precondition(vm.autosave() && !vm.dirty && vm.saveStatus == "已保存")
+        precondition(vm.query == "后台新增" && vm.selection == editingID && vm.draft?.commandID == editingID,
+                     "Saving a draft that no longer matches must preserve the current editor and query")
+        let edited = try context.existingObject(with: editingID) as! Command
+        precondition(edited.content == "已自动保存的中文 👩🏽‍💻\n第二行")
+        let savedAt = edited.updatedAt
+        precondition(vm.autosave() && edited.updatedAt == savedAt, "Repeated blur without changes must not write")
+        vm.draft?.body = ""
+        precondition(!vm.navigate(.all) && vm.selection == editingID && vm.dirty && vm.draft?.body == "",
+                     "Failed validation must preserve text and prevent navigation")
+        precondition(edited.content == "已自动保存的中文 👩🏽‍💻\n第二行")
+        vm.draft?.body = "离开前自动保存"
+        precondition(vm.navigate(.all) && edited.content == "离开前自动保存")
+        vm.select(original.objectID)
+        vm.draft?.body = "旧事件不能保存这里"
+        precondition(vm.autosave(session: firstSession) && vm.dirty && original.content != "旧事件不能保存这里")
+        precondition(vm.select(editingID) && original.content == "旧事件不能保存这里")
+        vm.navigate(.clipboard)
+        precondition(vm.draft == nil, "Clipboard source must remain read-only")
+        vm.navigate(.all)
+        let beforeBlank = vm.snippetCount
+        vm.newSnippet()
+        precondition(vm.navigate(.tag(a.objectID)) && vm.snippetCount == beforeBlank, "Blank drafts must not create records")
+        print("PASS: direct editing, Unicode autosave, filtered selection retention, no-op blur, save failure recovery, stale-session isolation and blank/history protection")
         vm.newSnippet()
         vm.draft?.body = "正在编辑"
         precondition(vm.navigate(.tag(a.objectID)) && vm.draft?.body == "正在编辑",
                      "Clicking the current tag must keep the draft")
         print("PASS: cached navigation preserves selection/query without catalog refresh; edit, retag, trash, restore and background insert refresh results and counts")
+    }
+}
+
+private final class RejectingSaveContext: NSManagedObjectContext {
+    var rejectSave = false
+    override func save() throws {
+        if rejectSave { throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteOutOfSpaceError) }
+        try super.save()
     }
 }

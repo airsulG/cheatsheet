@@ -270,7 +270,7 @@ struct CabinetView: View {
     private func resultRow(_ item: CabinetItem) -> some View {
         let preview = model.rowPreview(for: item)
         let tags = item.tags
-        return Button { model.select(item.id) } label: {
+        return Button { model.select(item.id, focusEditor: true) } label: {
             VStack(alignment: .leading, spacing: 10) {
                 if let data = item.image, let image = NSImage(data: data) {
                     Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: 145)
@@ -292,7 +292,7 @@ struct CabinetView: View {
                 }
             }.frame(maxWidth: .infinity, alignment: .leading).padding(14)
                 .contentShape(Rectangle())
-        }.buttonStyle(.plain).help("单击查看，双击复制")
+        }.buttonStyle(.plain).help("单击片段直接编辑，双击复制")
             .accessibilityLabel("片段：\(preview.title)")
             .simultaneousGesture(TapGesture(count: 2).onEnded {
                 if model.select(item.id) { model.copy(close: false) }
@@ -368,7 +368,7 @@ struct CabinetView: View {
                 } else {
                     Button(model.collectionLabel) { model.collect() }
                 }
-            }.font(.system(size: 11)).buttonStyle(.borderless).padding(.horizontal, 22).frame(height: 52)
+            }.font(.system(size: 11)).buttonStyle(.borderless).padding(.horizontal, CabinetGrid.detailInset).frame(height: CabinetGrid.headerHeight)
             Divider()
             CabinetReader(itemID: item.id, text: item.body, query: model.query,
                           dark: appearance == "dark", header: AnyView(
@@ -391,7 +391,7 @@ struct CabinetView: View {
                 Spacer()
                 Button("复制") { model.copy(close: false) }
                 Button("复制并收起") { model.copy(close: true) }.buttonStyle(.borderedProminent)
-            }.controlSize(.large).padding(18)
+            }.controlSize(.large).padding(.horizontal, CabinetGrid.detailInset).padding(.vertical, 18)
         }
     }
 

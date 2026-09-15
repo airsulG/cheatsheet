@@ -99,8 +99,7 @@ final class CabinetWindowController: NSObject, NSWindowDelegate {
             } else if event.keyCode == 53 {
                 model.requestClose()
                 return nil
-            } else if model.draft == nil &&
-                (model.searchHasFocus || !(panel?.firstResponder is NSTextView)) {
+            } else if model.searchHasFocus || !(panel?.firstResponder is NSTextView) {
                 switch event.keyCode {
                 case 125: model.moveSelection(1); return nil
                 case 126: model.moveSelection(-1); return nil
@@ -114,6 +113,12 @@ final class CabinetWindowController: NSObject, NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         model?.requestClose()
         return false
+    }
+    func windowDidResignKey(_ notification: Notification) {
+        guard let text = panel?.firstResponder as? NSTextView, text.hasMarkedText() else {
+            model?.autosave()
+            return
+        }
     }
 }
 

@@ -142,13 +142,14 @@ final class CabinetReaderDocument: NSView {
     }
 
     func arrange(width: CGFloat) {
-        guard width > 56 else { return }
-        let available = width - 56
+        let inset = CabinetGrid.detailInset
+        guard width > inset * 2 else { return }
+        let available = width - inset * 2
         let changedWidth = layoutWidth != width
         if changedWidth || needsHeaderLayout {
             headerView.rootView = AnyView(header.frame(width: available, alignment: .leading))
             headerHeight = ceil(headerView.fittingSize.height)
-            headerView.frame = NSRect(x: 28, y: 28, width: available, height: headerHeight)
+            headerView.frame = NSRect(x: inset, y: inset, width: available, height: headerHeight)
             needsHeaderLayout = false
         }
         if changedWidth || needsTextLayout, let container = textView.textContainer, let manager = textView.layoutManager {
@@ -157,8 +158,8 @@ final class CabinetReaderDocument: NSView {
             textHeight = textView.string.isEmpty ? 0 : ceil(manager.usedRect(for: container).height)
             needsTextLayout = false
         }
-        let textY = 28 + headerHeight + (headerHeight > 0 && textHeight > 0 ? 20 : 0)
-        textView.frame = NSRect(x: 28, y: textY, width: available, height: textHeight)
+        let textY = inset + headerHeight + (headerHeight > 0 && textHeight > 0 ? 20 : 0)
+        textView.frame = NSRect(x: inset, y: textY, width: available, height: textHeight)
         setFrameSize(NSSize(width: width, height: textY + textHeight + 28))
         layoutWidth = width
     }
