@@ -184,6 +184,10 @@ struct CabinetChecks {
         try await checkRefresh(container: container(model))
         try checkGridInteraction(container: container(model))
         try await checkSaveToast(container: container(model))
+        try await checkSoundFeedback(container: container(model))
+        let audioBundle = Bundle(url: modelURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent())!
+        try await checkSoundAssets(bundle: audioBundle)
+        try await checkMotionInterruptions(container: container(model))
         let failureContext = RejectingSaveContext(concurrencyType: .mainQueueConcurrencyType)
         failureContext.persistentStoreCoordinator = container(model).persistentStoreCoordinator
         let failureStore = CabinetStore(context: failureContext)
@@ -240,6 +244,121 @@ struct CabinetChecks {
         _ = view.resignFirstResponder()
         precondition(!model.dirty && model.saveStatus == "已保存" && model.selected?.body == original + "设计")
         print("PASS: native editor excludes marked IME text, commits Chinese and saves through its real blur callback")
+    }
+
+    @MainActor static func checkSoundAssets(bundle: Bundle) async throws {
+        let suite = "cabinet-audio-assets-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let sound = CabinetSoundPlayer(defaults: defaults)
+        sound.prepare(bundle: bundle)
+        precondition(sound.available, "Both local WAV files must be bundled and prepared before a click")
+        if ProcessInfo.processInfo.environment["CHEATSHEET_VERIFY_AUDIO_PLAYBACK"] == "1" {
+            precondition(sound.audition(.copied), "The real audio player must accept copy playback")
+            try await Task.sleep(for: .milliseconds(160))
+            precondition(sound.audition(.saved), "The real audio player must accept save playback")
+            try await Task.sleep(for: .milliseconds(130))
+            precondition(sound.audition(.copied), "Copy must remain playable after natural completion")
+            try await Task.sleep(for: .milliseconds(130))
+            sound.stop()
+            print("PASS: real bundled copy/save audio playback requested; subjective listening remains separate")
+        }
+        print("PASS: local sound assets decode and prepare before interaction")
+    }
+
+    @MainActor static func checkMotionInterruptions(container: NSPersistentContainer) async throws {
+        let store = CabinetStore(context: container.viewContext)
+        let first = try store.save(nil, title: "中断 A", body: "正文 A", tags: [])
+        let second = try store.save(nil, title: "中断 B", body: "正文 B", tags: [])
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let vm = CabinetViewModel(context: container.viewContext, pasteboard: board)
+        let host = NSHostingView(rootView: CabinetView(model: vm))
+        host.frame = NSRect(x: 0, y: 0, width: 1140, height: 740)
+        host.layoutSubtreeIfNeeded()
+        for index in 0..<10 {
+            let record = index.isMultiple(of: 2) ? first : second
+            precondition(vm.openDetail(record.objectID, animated: true) && vm.isDetailPresented)
+            vm.draft?.body = "输入与中断 \(index)"
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(25))
+            precondition(vm.closeDetail(animated: true) && !vm.isDetailPresented)
+            precondition(record.content == "输入与中断 \(index)")
+            host.layoutSubtreeIfNeeded()
+        }
+        vm.openDetail(first.objectID, animated: true)
+        try await Task.sleep(for: .milliseconds(260))
+        host.layoutSubtreeIfNeeded()
+        func editors(_ view: NSView) -> Int {
+            (view is CabinetEditableTextView ? 1 : 0) + view.subviews.reduce(0) { $0 + editors($1) }
+        }
+        precondition(vm.selection == first.objectID && vm.isDetailPresented && editors(host) == 1,
+                     "Interrupted transitions must settle on one editor for the final object")
+        vm.closeDetail()
+        print("PASS: ten native host transitions reversed after 25ms, drafts saved, final editor unique; visual frame pacing not inferred")
+    }
+
+    @MainActor static func checkSoundFeedback(container: NSPersistentContainer) async throws {
+        let suite = "cabinet-sound-check-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var now: TimeInterval = 10
+        var played: [(CabinetSuccess, Float)] = []
+        let sound = CabinetSoundPlayer(defaults: defaults, clock: { now }) { kind, volume in
+            played.append((kind, volume)); return true
+        }
+        precondition(sound.enabled && !sound.saveEnabled && sound.volume == 0.35)
+        sound.request(.saved)
+        try await Task.sleep(for: .milliseconds(120))
+        precondition(played.isEmpty, "Automatic save sound is off by default")
+        for _ in 0..<10 { sound.request(.copied) }
+        precondition(played.count == 1 && played.last?.0 == .copied)
+        now += 0.13; sound.request(.copied)
+        precondition(played.count == 2)
+        defaults.set(true, forKey: CabinetSoundPlayer.saveEnabledKey)
+        now += 1
+        sound.request(.saved); sound.request(.copied)
+        try await Task.sleep(for: .milliseconds(120))
+        precondition(played.count == 3 && played.last?.0 == .copied, "Immediate copy cancels the pending save sound")
+        now += 1; sound.request(.saved)
+        try await Task.sleep(for: .milliseconds(120))
+        precondition(played.count == 4 && played.last?.0 == .saved)
+        now += 1; sound.request(.saved); sound.cancelPending()
+        try await Task.sleep(for: .milliseconds(120))
+        precondition(played.count == 4, "Failed operation can cancel a pending sound")
+        sound.request(.saved)
+        defaults.set(false, forKey: CabinetSoundPlayer.enabledKey)
+        try await Task.sleep(for: .milliseconds(120))
+        sound.request(.copied)
+        precondition(!sound.audition(.copied) && played.count == 4)
+        defaults.set(true, forKey: CabinetSoundPlayer.enabledKey)
+        defaults.set(0, forKey: CabinetSoundPlayer.volumeKey)
+        precondition(!sound.audition(.saved) && played.count == 4)
+        defaults.set(0.6, forKey: CabinetSoundPlayer.volumeKey)
+        precondition(sound.audition(.saved) && abs(played.last!.1 - 0.6) < 0.001)
+        let reopened = CabinetSoundPlayer(defaults: UserDefaults(suiteName: suite)!)
+        precondition(reopened.enabled && reopened.saveEnabled && abs(reopened.volume - 0.6) < 0.001)
+        let store = CabinetStore(context: container.viewContext)
+        let record = try store.save(nil, title: "反馈路由", body: "原文", tags: [])
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let vm = CabinetViewModel(context: container.viewContext, pasteboard: board)
+        vm.successFeedback = { sound.request($0) }
+        vm.cancelPendingFeedback = { sound.cancelPending() }
+        vm.openDetail(record.objectID)
+        let count = played.count
+        precondition(vm.autosave())
+        precondition(played.count == count)
+        vm.draft?.body = "保存再复制"
+        now += 1; vm.copy(close: false)
+        try await Task.sleep(for: .milliseconds(120))
+        precondition(played.count == count + 1 && played.last?.0 == .copied && board.string(forType: .string) == "保存再复制")
+        vm.draft?.body = ""
+        precondition(!vm.autosave())
+        try await Task.sleep(for: .milliseconds(120))
+        precondition(played.count == count + 1 && vm.dirty)
+        sound.stop()
+        print("PASS: sound defaults, rate limiting, save-copy coalescing, mute/zero volume, pending cancellation, persisted preferences and success-only model routing")
     }
 
     @MainActor static func checkSaveToast(container: NSPersistentContainer) async throws {

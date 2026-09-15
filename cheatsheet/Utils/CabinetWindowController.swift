@@ -48,6 +48,8 @@ final class CabinetWindowController: NSObject, NSWindowDelegate {
         let context = PersistenceController.shared.container.viewContext
         let pasteboard = CabinetRuntime.isPreview ? NSPasteboard(name: .init("cheatsheet-cabinet-preview")) : .general
         let model = CabinetViewModel(context: context, pasteboard: pasteboard)
+        model.successFeedback = { CabinetSoundPlayer.shared.request($0) }
+        model.cancelPendingFeedback = { CabinetSoundPlayer.shared.cancelPending() }
         self.model = model
         let panel = CabinetPanel(contentRect: NSRect(x: 0, y: 0, width: 1140, height: 740),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],

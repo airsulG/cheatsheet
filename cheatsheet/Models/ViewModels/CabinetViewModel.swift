@@ -68,6 +68,8 @@ final class CabinetViewModel: ObservableObject {
     var closeWindow: (() -> Void)?
     var focusSearch: (() -> Void)?
     var searchHasFocus = false
+    var successFeedback: ((CabinetSuccess) -> Void)?
+    var cancelPendingFeedback: (() -> Void)?
     private var originalDraft: CabinetDraft?
     private var pinnedDraftID: NSManagedObjectID?
     private var contexts: [CabinetLocation: (String, NSManagedObjectID?)] = [:]
@@ -326,10 +328,12 @@ final class CabinetViewModel: ObservableObject {
             saveStatus = "已保存"; error = nil
             reload()
             showToast("已保存")
+            successFeedback?(.saved)
             // 通知刷新列表；不清空搜索，也不让失焦保存改变当前位置。
             return true
         } catch {
             clearToast()
+            cancelPendingFeedback?()
             saveStatus = "保存失败，内容已保留"; self.error = error.localizedDescription
             return false
         }
@@ -349,8 +353,9 @@ final class CabinetViewModel: ObservableObject {
             success = pasteboard.writeObjects([image])
             if !item.body.isEmpty { _ = pasteboard.setString(item.body, forType: .string) }
         } else { success = pasteboard.setString(item.body, forType: .string) }
-        guard success else { clearToast(); error = "复制失败，请重试"; return }
+        guard success else { clearToast(); cancelPendingFeedback?(); error = "复制失败，请重试"; return }
         showToast("已复制到剪贴板", copiedID: item.id)
+        successFeedback?(.copied)
         if close { closeWindow?() }
     }
     private func showToast(_ message: String, copiedID: NSManagedObjectID? = nil) {

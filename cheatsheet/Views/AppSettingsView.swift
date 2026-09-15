@@ -164,6 +164,7 @@ private struct ShelfSettingsView: View {
                     }.pickerStyle(.segmented).labelsHidden().fixedSize()
                 }
             } header: { Text("外观") }
+            CabinetSoundSettings()
             CabinetSettingsSection {
                 Text("在列表标题旁切换最近修改、标题或手动顺序。片段右键菜单支持上移和下移。")
                     .font(.caption)

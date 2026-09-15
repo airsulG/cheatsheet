@@ -23,6 +23,24 @@ import SwiftUI
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
         let vm = CabinetViewModel(context: container.viewContext, pasteboard: board)
+        if let destination = ProcessInfo.processInfo.environment["CHEATSHEET_RENDER_SETTINGS"] {
+            let directory = URL(fileURLWithPath: destination, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let bundle = Bundle(url: URL(fileURLWithPath: CommandLine.arguments[1]).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent())!
+            CabinetSoundPlayer.shared.prepare(bundle: bundle)
+            let clipboard = PagedClipboardViewModel(context: container.viewContext)
+            for size in [NSSize(width: 780, height: 600), NSSize(width: 720, height: 540)] {
+                let host = NSHostingView(rootView: AppSettingsView(context: container.viewContext, clipboardViewModel: clipboard))
+                host.frame = NSRect(origin: .zero, size: size)
+                host.layoutSubtreeIfNeeded()
+                let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                let png = bitmap.representation(using: .png, properties: [:])!
+                try png.write(to: directory.appendingPathComponent("settings-\(Int(size.width)).png"))
+            }
+            print("Rendered native settings components only; not a desktop screenshot or motion recording")
+            return
+        }
         let id = vm.items.first!.id
         func measure(_ action: () -> Void) -> Double {
             let start = DispatchTime.now().uptimeNanoseconds

@@ -15,6 +15,7 @@ struct cheatsheetApp: App {
     private let clipboardMonitor: ClipboardMonitor
 
     init() {
+        CabinetSoundPlayer.shared.prepare()
         GlobalHotkeyManager.shared.register(isPreview: CabinetRuntime.isPreview)
 
         // 使用后台上下文进行监控
