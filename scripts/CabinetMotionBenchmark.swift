@@ -38,7 +38,7 @@ import SwiftUI
             var samples: [Double] = []
             for iteration in 0..<12 {
                 let duration = autoreleasepool { measure {
-                    let host = NSHostingView(rootView: CabinetView(model: vm).environment(\.accessibilityReduceMotion, true))
+                    let host = NSHostingView(rootView: CabinetView(model: vm))
                     host.frame = NSRect(x: 0, y: 0, width: 1140, height: 740)
                     host.layoutSubtreeIfNeeded()
                     precondition(host.subviews.count > 0)
