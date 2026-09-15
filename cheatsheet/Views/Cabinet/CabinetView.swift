@@ -4,9 +4,11 @@ import SwiftUI
 
 struct CabinetView: View {
     @ObservedObject var model: CabinetViewModel
+    var onCardClick: ((NSManagedObjectID) -> Void)?
     @AppStorage("cabinetAppearance") private var appearance = "dark"
     @State private var collapsed: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "cabinetCollapsedGroups") ?? [])
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var palette: CabinetPalette { CabinetPalette(dark: appearance == "dark") }
 
@@ -22,10 +24,30 @@ struct CabinetView: View {
         VStack(spacing: 0) {
             toolbar
             Divider()
-            HSplitView {
-                sidebar.frame(minWidth: 162, idealWidth: 188, maxWidth: 245)
-                results.frame(minWidth: 224, idealWidth: 304, maxWidth: 410)
-                detail.frame(minWidth: 310, maxWidth: .infinity)
+            HStack(spacing: 0) {
+                sidebar.frame(width: 188)
+                Divider()
+                GeometryReader { geometry in
+                    ZStack(alignment: .trailing) {
+                        results
+                        if model.isDetailPresented {
+                            detail.frame(width: min(460, max(340, geometry.size.width * 0.5)))
+                                .background(palette.reader)
+                                .overlay(alignment: .leading) {
+                                    Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1)
+                                        .allowsHitTesting(false)
+                                }
+                                .shadow(color: .black.opacity(0.16), radius: 16, x: -6)
+                                .transition(reduceMotion ? .opacity : .move(edge: .trailing))
+                                .zIndex(1)
+                        }
+                    }.clipped()
+                        .animation(model.detailUsesMotion ? CabinetMotion.settle(0.2) : nil,
+                                   value: model.isDetailPresented)
+                        .onChange(of: geometry.size.width, initial: true) { _, width in
+                            model.gridColumnCount = max(1, Int((width - 48 + 12) / (210 + 12)))
+                        }
+                }
             }
         }
         .padding(.top, 28)
@@ -37,16 +59,7 @@ struct CabinetView: View {
         .accentColor(palette.accent)
         .frame(minWidth: 740, minHeight: 520)
         .overlay(alignment: .top) {
-            if model.copiedItemID != nil {
-                Label("已复制到剪贴板", systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 13, weight: .medium)).foregroundStyle(palette.accent)
-                    .padding(.horizontal, 16).padding(.vertical, 11)
-                    .background(palette.reader, in: Capsule())
-                    .overlay(Capsule().stroke(palette.accent.opacity(0.5), lineWidth: 1))
-                    .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
-                    .padding(.top, 84).allowsHitTesting(false)
-                    .accessibilityLabel("已复制到剪贴板")
-            }
+            CabinetToast(message: model.toastMessage, palette: palette).padding(.top, 84)
         }
         .onChange(of: collapsed) { _, value in UserDefaults.standard.set(Array(value), forKey: "cabinetCollapsedGroups") }
         .alert("未能完成操作", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
@@ -158,7 +171,7 @@ struct CabinetView: View {
                     Text("最近删除")
                     Spacer(minLength: 0)
                 }.font(.system(size: 11)).foregroundStyle(.secondary)
-                    .padding(.horizontal, SidebarGrid.inset).frame(height: 38).contentShape(Rectangle())
+                    .padding(.horizontal, SidebarGrid.inset).frame(height: CabinetGrid.footerHeight).contentShape(Rectangle())
             }.buttonStyle(.plain)
         }.padding(.horizontal, 9)
     }
@@ -172,7 +185,10 @@ struct CabinetView: View {
                 Text("\(count)").font(.system(size: 10).monospacedDigit()).foregroundStyle(.secondary)
                     .frame(width: SidebarGrid.accessory)
             }.padding(.horizontal, SidebarGrid.inset).frame(height: 36)
-                .background(model.location == target ? palette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                .background {
+                    RoundedRectangle(cornerRadius: 6).fill(model.location == target ? palette.selection : .clear)
+                        .animation(CabinetMotion.hover, value: model.location == target)
+                }
                 .contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
@@ -194,7 +210,10 @@ struct CabinetView: View {
                 }.padding(.horizontal, SidebarGrid.inset).frame(height: 30).contentShape(Rectangle())
             }.buttonStyle(.plain)
         }.font(.system(size: 13))
-            .background(model.location == .tag(tag.objectID) ? palette.selection : .clear, in: RoundedRectangle(cornerRadius: 5))
+            .background {
+                RoundedRectangle(cornerRadius: 5).fill(model.location == .tag(tag.objectID) ? palette.selection : .clear)
+                    .animation(CabinetMotion.hover, value: model.location == .tag(tag.objectID))
+            }
             .contextMenu { tagMenu(tag) }
     }
 
@@ -235,7 +254,7 @@ struct CabinetView: View {
                     } label: { Image(systemName: "arrow.up.arrow.down").font(.system(size: 11)) }
                         .menuStyle(.borderlessButton).fixedSize().help(model.sort)
                 }
-            }.padding(.horizontal, 20).frame(height: 52)
+            }.padding(.horizontal, CabinetGrid.detailInset).frame(height: CabinetGrid.headerHeight)
             Divider()
             if model.location == .trash { trashList }
             else if model.items.isEmpty {
@@ -247,12 +266,21 @@ struct CabinetView: View {
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 9) {
-                            ForEach(model.items) { item in
-                                resultRow(item).id(item.id)
+                    GeometryReader { viewport in
+                        ScrollView {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 12)], spacing: 12) {
+                                ForEach(model.items) { item in
+                                    resultRow(item).id(item.id)
+                                }
                             }
-                        }.padding(9)
+                            .padding(CabinetGrid.detailInset)
+                            .frame(minHeight: viewport.size.height, alignment: .top)
+                            .background {
+                                Color.clear.contentShape(Rectangle()).onTapGesture {
+                                    if model.isDetailPresented { model.closeDetail(animated: true) }
+                                }
+                            }
+                        }
                     }
                     .onChange(of: model.selectionScrollRequest) { _, _ in
                         if let id = model.selection { proxy.scrollTo(id) }
@@ -261,46 +289,49 @@ struct CabinetView: View {
             }
             Divider()
             HStack {
-                Text("↑ ↓  选择   ·   ↵  复制并收起")
+                Text("单击编辑 · 双击复制")
                 Spacer()
-            }.font(.system(size: 10)).foregroundStyle(.secondary).padding(12)
+                Text("方向键选择 · ↵ 复制并收起")
+            }.font(.system(size: 10)).foregroundStyle(.secondary)
+                .padding(.horizontal, CabinetGrid.detailInset).frame(height: CabinetGrid.footerHeight)
         }.background(palette.list)
     }
 
     private func resultRow(_ item: CabinetItem) -> some View {
-        Button { model.select(item.id) } label: {
-            VStack(alignment: .leading, spacing: 10) {
+        let preview = model.rowPreview(for: item)
+        let tags = item.tags
+        let rowHelp: String
+        if case .snippet = item { rowHelp = "单击片段直接编辑，双击复制" }
+        else { rowHelp = "单击查看原文，双击复制" }
+        return Button {
+            if let onCardClick { onCardClick(item.id) }
+            else { model.toggleDetail(item.id, animated: true) }
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
                 if let data = item.image, let image = NSImage(data: data) {
-                    Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: 145)
+                    Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity).frame(height: 64)
                         .padding(6).background(palette.input, in: RoundedRectangle(cornerRadius: 4))
                 }
-                Text(item.title).font(.system(size: 13, weight: item.title == CabinetContent.title(item.body) ? .regular : .medium))
+                Text(preview.title).font(.system(size: 13, weight: preview.isDerivedTitle ? .regular : .medium))
                     .lineLimit(2).lineSpacing(5)
-                if !item.body.isEmpty && item.body != item.title {
-                    Text(excerpt(item)).font(.system(size: 11, design: CabinetContent.isMonospaced(item.body) ? .monospaced : .default))
-                        .foregroundStyle(.secondary).lineLimit(3).lineSpacing(4)
+                if !preview.excerpt.isEmpty {
+                    Text(preview.excerpt).font(.system(size: 11, design: preview.isMonospaced ? .monospaced : .default))
+                        .foregroundStyle(.secondary).lineLimit(item.image == nil ? 6 : 1).lineSpacing(4)
                 }
-                if !item.tags.isEmpty {
-                    CabinetTagFlow(spacing: 4) {
-                        ForEach(item.tags) { tag in CabinetTagLabel(name: tag.name ?? "") }
+                Spacer(minLength: 0)
+                if !tags.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(Array(tags.prefix(2))) { tag in CabinetTagLabel(name: tag.name ?? "").lineLimit(1) }
+                        if tags.count > 2 { Text("+\(tags.count - 2)").font(.system(size: 10)).foregroundStyle(.secondary) }
                     }
                 }
                 if case .history(let record) = item {
                     CabinetClipboardSource(record: record)
                 }
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(14)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(14).frame(height: 200)
                 .contentShape(Rectangle())
-        }.buttonStyle(.plain).help("单击查看，双击复制")
-            .accessibilityLabel("片段：\(item.title)")
-            .simultaneousGesture(TapGesture(count: 2).onEnded {
-                if model.select(item.id) { model.copy(close: false) }
-            })
-            .background(model.selection == item.id ? palette.selection : palette.reader.opacity(0.44), in: RoundedRectangle(cornerRadius: 7))
-            .overlay {
-                RoundedRectangle(cornerRadius: 7)
-                    .strokeBorder(model.selection == item.id ? Color.accentColor.opacity(0.48) : Color.primary.opacity(0.12), lineWidth: 1)
-                    .allowsHitTesting(false)
-            }
+        }.buttonStyle(CabinetCardStyle(selected: model.selection == item.id, palette: palette)).help(rowHelp)
+            .accessibilityLabel("片段：\(preview.title)")
             .contextMenu {
                 Button("复制") { if model.select(item.id) { model.copy(close: false) } }
                 Button("复制并收起") { if model.select(item.id) { model.copy(close: true) } }
@@ -309,27 +340,18 @@ struct CabinetView: View {
                         Button("返回剪贴板") { model.navigate(.clipboard) }
                     }
                     Button("编辑") { if model.select(item.id) { model.edit() } }
-                    Button(c.isFavorite ? "取消常用" : "设为常用") { model.perform { c.toggleFavorite(); try model.context.save() } }
+                    Button(c.isFavorite ? "取消常用" : "设为常用") { model.toggleFavorite(c) }
                     Button("上移") { model.move(item, offset: -1) }
                     Button("下移") { model.move(item, offset: 1) }
-                    Button("移到最近删除", role: .destructive) { model.perform { try model.store.trash(c) } }
+                    Button("移到最近删除", role: .destructive) {
+                        guard model.allowLeaving() else { return }
+                        model.perform { try model.store.trash(c) }
+                    }
                 } else if case .history(let history) = item {
                     Button("删除这条记录…", role: .destructive) { model.deleteHistory(history) }
                 }
             }
     }
-    private func excerpt(_ item: CabinetItem) -> String {
-        if !model.query.isEmpty, let range = item.body.range(of: model.query, options: [.caseInsensitive, .diacriticInsensitive]) {
-            let start = item.body.index(range.lowerBound, offsetBy: -25, limitedBy: item.body.startIndex) ?? item.body.startIndex
-            return (start == item.body.startIndex ? "" : "…") + String(item.body[start...].prefix(240))
-        }
-        if case .snippet(let command) = item, (command.name ?? "").isEmpty,
-           let newline = item.body.firstIndex(of: "\n") {
-            return String(item.body[item.body.index(after: newline)...].trimmingCharacters(in: .whitespacesAndNewlines).prefix(240))
-        }
-        return String(item.body.prefix(240))
-    }
-
     private var trashList: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 15) {
@@ -345,7 +367,7 @@ struct CabinetView: View {
                         Button("恢复") { model.perform { try model.store.restore(object) } }.controlSize(.small)
                     }
                 }
-            }.padding(20)
+            }.padding(CabinetGrid.detailInset)
         }
     }
 
@@ -354,7 +376,7 @@ struct CabinetView: View {
             if model.draft != nil {
                 CabinetEditor(model: model, palette: palette)
             } else if let item = model.selected {
-                reader(item).id(item.id)
+                reader(item)
             } else {
                 VStack(spacing: 14) {
                     Image(systemName: "doc.text").font(.system(size: 32)).foregroundStyle(.tertiary)
@@ -368,22 +390,21 @@ struct CabinetView: View {
         VStack(spacing: 0) {
             HStack {
                 Text(model.location == .clipboard ? "剪贴板原文" : "片段").foregroundStyle(.secondary)
+                Button { model.closeDetail(animated: true) } label: { Image(systemName: "sidebar.right") }
+                    .help("收起面板（Esc）").accessibilityLabel("收起编辑面板")
                 Spacer()
                 if case .snippet(let c) = item {
                     if c.originID != nil { Button("返回剪贴板") { model.navigate(.clipboard) } }
-                    Button { model.perform { c.toggleFavorite(); try model.context.save() } } label: {
-                        Image(systemName: c.isFavorite ? "star.fill" : "star")
-                    }.help(c.isFavorite ? "取消常用" : "设为常用")
+                    CabinetFavoriteButton(command: c, model: model)
                     Button("编辑") { model.edit() }
                 } else {
                     Button(model.collectionLabel) { model.collect() }
                 }
-            }.font(.system(size: 11)).buttonStyle(.borderless).padding(.horizontal, 22).frame(height: 52)
+            }.font(.system(size: 11)).buttonStyle(.borderless).padding(.horizontal, CabinetGrid.detailInset).frame(height: CabinetGrid.headerHeight)
             Divider()
-            ScrollViewReader { proxy in
-                ScrollView {
+            CabinetReader(itemID: item.id, text: item.body, query: model.query,
+                          dark: appearance == "dark", header: AnyView(
                     VStack(alignment: .leading, spacing: 20) {
-                        Color.clear.frame(height: 0).id("reader-top")
                         if case .history(let record) = item { CabinetClipboardSource(record: record) }
                         if !item.tags.isEmpty {
                             CabinetTagFlow(spacing: 6) { ForEach(item.tags) { CabinetTagLabel(name: $0.name ?? "") } }
@@ -394,34 +415,15 @@ struct CabinetView: View {
                         if let data = item.image, let image = NSImage(data: data) {
                             Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity)
                         }
-                        VStack(alignment: .leading, spacing: 4) {
-                        ForEach(Array(item.body.components(separatedBy: "\n").enumerated()), id: \.offset) { index, line in
-                            Text(line.isEmpty ? " " : line)
-                                .font(.system(size: 14, design: CabinetContent.isMonospaced(item.body) ? .monospaced : .default))
-                                .lineSpacing(7).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                                .background(!model.query.isEmpty && line.localizedStandardContains(model.query) ? Color.accentColor.opacity(0.13) : .clear)
-                                .id(index)
-                        }
-                        }
-                    }.frame(maxWidth: .infinity, alignment: .leading).padding(28)
-                }.onChange(of: item.id, initial: true) { _, _ in
-                    let lines = item.body.components(separatedBy: "\n")
-                    let target = model.query.isEmpty ? 0 : lines.firstIndex { $0.localizedStandardContains(model.query) } ?? 0
-                    if model.query.isEmpty { proxy.scrollTo("reader-top", anchor: .top) }
-                    else { proxy.scrollTo(target, anchor: .top) }
-                }.onChange(of: model.query) { _, query in
-                    let target = item.body.components(separatedBy: "\n").firstIndex { $0.localizedStandardContains(query) } ?? 0
-                    if query.isEmpty { proxy.scrollTo("reader-top", anchor: .top) }
-                    else { proxy.scrollTo(target, anchor: .top) }
-                }
-            }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+            ))
             Divider()
             HStack(spacing: 12) {
                 Text(model.feedback).font(.system(size: 10)).foregroundStyle(.secondary)
                 Spacer()
                 Button("复制") { model.copy(close: false) }
                 Button("复制并收起") { model.copy(close: true) }.buttonStyle(.borderedProminent)
-            }.controlSize(.large).padding(18)
+            }.controlSize(.large).padding(.horizontal, CabinetGrid.detailInset).frame(height: CabinetGrid.footerHeight)
         }
     }
 

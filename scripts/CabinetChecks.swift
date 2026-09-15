@@ -1,5 +1,7 @@
 import AppKit
 import CoreData
+import SwiftUI
+import Combine
 @testable import cheatsheet
 
 @main
@@ -95,8 +97,13 @@ struct CabinetChecks {
         print("PASS: history source dedup and original protection; v2 JSON roundtrip covers groups, images, no tags and origin; imports v1")
         let named = NSPasteboard(name: .init("cabinet-check-\(UUID())"))
         let vm = CabinetViewModel(context: context, pasteboard: named)
+        precondition(CabinetContent.title(" \r\n\t\u{2028}  第一行 👩🏽‍💻  \n后续正文") == "第一行 👩🏽‍💻")
+        precondition(CabinetContent.title(" \n\t", image: true) == "图片")
+        precondition(CabinetContent.title(" \n\t") == "未命名片段")
+        precondition(vm.rowPreview(for: .snippet(command)).title == command.displayTitle)
         vm.search("末尾关键字")
         precondition(vm.items.count == 1)
+        precondition(vm.rowPreview(for: .snippet(command)).excerpt.contains("末尾关键字"))
         vm.copy(close: false)
         precondition(named.string(forType: .string) == body)
         vm.navigate(.clipboard)
@@ -142,6 +149,7 @@ struct CabinetChecks {
         vm.moveSelection(-1)
         precondition(vm.selectionScrollRequest == scrollBefore + 1, "Keyboard selection should remain visible")
         _ = NSApplication.shared
+        checkReader(itemID: command.objectID, otherID: untagged.objectID)
         let searchWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 80),
                                     styleMask: [.titled], backing: .buffered, defer: false)
         let field = NSTextField(frame: NSRect(x: 20, y: 25, width: 320, height: 25))
@@ -173,13 +181,429 @@ struct CabinetChecks {
         precondition(CabinetSourceIcon.image(data: Data([0, 1]), bundleID: "com.apple.finder") != nil)
         precondition(CabinetSourceIcon.image(data: nil, bundleID: "missing.app") == nil)
         print("PASS: clipboard source icon uses saved data, falls back to installed app, and tolerates missing apps")
+        try await checkRefresh(container: container(model))
+        try checkGridInteraction(container: container(model))
+        try await checkSaveToast(container: container(model))
+        try await checkSoundFeedback(container: container(model))
+        let audioBundle = Bundle(url: modelURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent())!
+        try await checkSoundAssets(bundle: audioBundle)
+        try await checkMotionInterruptions(container: container(model))
+        let failureContext = RejectingSaveContext(concurrencyType: .mainQueueConcurrencyType)
+        failureContext.persistentStoreCoordinator = container(model).persistentStoreCoordinator
+        let failureStore = CabinetStore(context: failureContext)
+        let intact = try failureStore.save(nil, title: "原标题", body: "磁盘写入失败前的正文", tags: [])
+        let failingVM = CabinetViewModel(context: failureContext, pasteboard: named)
+        failingVM.draft?.body = "必须留在草稿中的修改"
+        failureContext.rejectSave = true
+        precondition(!failingVM.autosave() && failingVM.dirty && failingVM.draft?.body == "必须留在草稿中的修改")
+        precondition(intact.content == "磁盘写入失败前的正文", "A failed save must restore the managed object's prior fields")
+        failureContext.rejectSave = false
+        precondition(failingVM.autosave() && intact.content == "必须留在草稿中的修改")
+        let favoriteBefore = intact.isFavorite
+        let favoriteDate = intact.updatedAt
+        failureContext.rejectSave = true
+        precondition(!failingVM.toggleFavorite(intact) && intact.isFavorite == favoriteBefore && intact.updatedAt == favoriteDate)
+        failureContext.rejectSave = false
+        for _ in 0..<10 { precondition(failingVM.toggleFavorite(intact)) }
+        precondition(intact.isFavorite == favoriteBefore)
+        print("PASS: favorite failure restores state and timestamp; ten rapid toggles persist the final state")
+        print("PASS: simulated disk save failure preserves draft, restores the record and supports retry")
+        try await checkEditableText(model: failingVM)
+        vm.search("")
+        vm.select(image.objectID)
+        vm.draft?.body = "自动保存后重启仍保留"
+        precondition(vm.allowLeaving())
         let savedImageID = image.id
         context.reset()
         try upgraded.persistentStoreCoordinator.remove(upgraded.persistentStoreCoordinator.persistentStores[0])
         let reopened = container(model, url: url)
         let persisted = try reopened.viewContext.fetch(Command.fetchRequest())
-        precondition(persisted.count == 4 && persisted.contains { $0.id == savedImageID && $0.imageData == imageData })
+        precondition(persisted.count == 4 && persisted.contains { $0.id == savedImageID && $0.imageData == imageData && $0.content == "自动保存后重启仍保留" })
         print("PASS: disk store closes and reopens with image and multi-tag assets intact")
         print("Isolated evidence store: \(directory.path)")
+    }
+
+    @MainActor static func checkEditableText(model: CabinetViewModel) async throws {
+        let host = NSHostingView(rootView: CabinetEditor(model: model, palette: CabinetPalette(dark: true)))
+        host.frame = NSRect(x: 0, y: 0, width: 500, height: 540)
+        host.layoutSubtreeIfNeeded()
+        @MainActor func find(_ root: NSView) -> CabinetEditableTextView? {
+            if let text = root as? CabinetEditableTextView { return text }
+            return root.subviews.lazy.compactMap { find($0) }.first
+        }
+        let view = find(host)!
+        let coordinator = view.delegate as! CabinetTextEditor.Coordinator
+        let original = model.draft!.body
+        view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
+        view.setMarkedText("sheji", selectedRange: NSRange(location: 5, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: view))
+        precondition(view.hasMarkedText() && model.draft?.body == original, "Uncommitted composition must not overwrite the draft")
+        view.insertText("设计", replacementRange: NSRange(location: NSNotFound, length: 0))
+        coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: view))
+        precondition(!view.hasMarkedText() && model.draft?.body == original + "设计")
+        _ = view.resignFirstResponder()
+        precondition(!model.dirty && model.saveStatus == "已保存" && model.selected?.body == original + "设计")
+        print("PASS: native editor excludes marked IME text, commits Chinese and saves through its real blur callback")
+    }
+
+    @MainActor static func checkSoundAssets(bundle: Bundle) async throws {
+        let suite = "cabinet-audio-assets-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let sound = CabinetSoundPlayer(defaults: defaults)
+        sound.prepare(bundle: bundle)
+        precondition(sound.available, "Both local WAV files must be bundled and prepared before a click")
+        if ProcessInfo.processInfo.environment["CHEATSHEET_VERIFY_AUDIO_PLAYBACK"] == "1" {
+            precondition(sound.audition(.copied), "The real audio player must accept copy playback")
+            try await Task.sleep(for: .milliseconds(160))
+            precondition(sound.audition(.saved), "The real audio player must accept save playback")
+            try await Task.sleep(for: .milliseconds(130))
+            precondition(sound.audition(.copied), "Copy must remain playable after natural completion")
+            try await Task.sleep(for: .milliseconds(130))
+            sound.stop()
+            print("PASS: real bundled copy/save audio playback requested; subjective listening remains separate")
+        }
+        print("PASS: local sound assets decode and prepare before interaction")
+    }
+
+    @MainActor static func checkMotionInterruptions(container: NSPersistentContainer) async throws {
+        let store = CabinetStore(context: container.viewContext)
+        let first = try store.save(nil, title: "中断 A", body: "正文 A", tags: [])
+        let second = try store.save(nil, title: "中断 B", body: "正文 B", tags: [])
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let vm = CabinetViewModel(context: container.viewContext, pasteboard: board)
+        let host = NSHostingView(rootView: CabinetView(model: vm))
+        host.frame = NSRect(x: 0, y: 0, width: 1140, height: 740)
+        host.layoutSubtreeIfNeeded()
+        for index in 0..<10 {
+            let record = index.isMultiple(of: 2) ? first : second
+            precondition(vm.openDetail(record.objectID, animated: true) && vm.isDetailPresented)
+            vm.draft?.body = "输入与中断 \(index)"
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(25))
+            precondition(vm.closeDetail(animated: true) && !vm.isDetailPresented)
+            precondition(record.content == "输入与中断 \(index)")
+            host.layoutSubtreeIfNeeded()
+        }
+        vm.openDetail(first.objectID, animated: true)
+        try await Task.sleep(for: .milliseconds(260))
+        host.layoutSubtreeIfNeeded()
+        func editors(_ view: NSView) -> Int {
+            (view is CabinetEditableTextView ? 1 : 0) + view.subviews.reduce(0) { $0 + editors($1) }
+        }
+        precondition(vm.selection == first.objectID && vm.isDetailPresented && editors(host) == 1,
+                     "Interrupted transitions must settle on one editor for the final object")
+        vm.closeDetail()
+        print("PASS: ten native host transitions reversed after 25ms, drafts saved, final editor unique; visual frame pacing not inferred")
+    }
+
+    @MainActor static func checkSoundFeedback(container: NSPersistentContainer) async throws {
+        let suite = "cabinet-sound-check-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var now: TimeInterval = 10
+        var played: [(CabinetSuccess, Float)] = []
+        let sound = CabinetSoundPlayer(defaults: defaults, clock: { now }) { kind, volume in
+            played.append((kind, volume)); return true
+        }
+        precondition(sound.enabled && !sound.saveEnabled && sound.volume == 0.35)
+        sound.request(.saved)
+        try await Task.sleep(for: .milliseconds(120))
+        precondition(played.isEmpty, "Automatic save sound is off by default")
+        for _ in 0..<10 { sound.request(.copied) }
+        precondition(played.count == 1 && played.last?.0 == .copied)
+        now += 0.13; sound.request(.copied)
+        precondition(played.count == 2)
+        defaults.set(true, forKey: CabinetSoundPlayer.saveEnabledKey)
+        now += 1
+        sound.request(.saved); sound.request(.copied)
+        try await Task.sleep(for: .milliseconds(120))
+        precondition(played.count == 3 && played.last?.0 == .copied, "Immediate copy cancels the pending save sound")
+        now += 1; sound.request(.saved)
+        try await Task.sleep(for: .milliseconds(120))
+        precondition(played.count == 4 && played.last?.0 == .saved)
+        now += 1; sound.request(.saved); sound.cancelPending()
+        try await Task.sleep(for: .milliseconds(120))
+        precondition(played.count == 4, "Failed operation can cancel a pending sound")
+        sound.request(.saved)
+        defaults.set(false, forKey: CabinetSoundPlayer.enabledKey)
+        try await Task.sleep(for: .milliseconds(120))
+        sound.request(.copied)
+        precondition(!sound.audition(.copied) && played.count == 4)
+        defaults.set(true, forKey: CabinetSoundPlayer.enabledKey)
+        defaults.set(0, forKey: CabinetSoundPlayer.volumeKey)
+        precondition(!sound.audition(.saved) && played.count == 4)
+        defaults.set(0.6, forKey: CabinetSoundPlayer.volumeKey)
+        precondition(sound.audition(.saved) && abs(played.last!.1 - 0.6) < 0.001)
+        let reopened = CabinetSoundPlayer(defaults: UserDefaults(suiteName: suite)!)
+        precondition(reopened.enabled && reopened.saveEnabled && abs(reopened.volume - 0.6) < 0.001)
+        let store = CabinetStore(context: container.viewContext)
+        let record = try store.save(nil, title: "反馈路由", body: "原文", tags: [])
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let vm = CabinetViewModel(context: container.viewContext, pasteboard: board)
+        vm.successFeedback = { sound.request($0) }
+        vm.cancelPendingFeedback = { sound.cancelPending() }
+        vm.openDetail(record.objectID)
+        let count = played.count
+        precondition(vm.autosave())
+        precondition(played.count == count)
+        vm.draft?.body = "保存再复制"
+        now += 1; vm.copy(close: false)
+        try await Task.sleep(for: .milliseconds(120))
+        precondition(played.count == count + 1 && played.last?.0 == .copied && board.string(forType: .string) == "保存再复制")
+        vm.draft?.body = ""
+        precondition(!vm.autosave())
+        try await Task.sleep(for: .milliseconds(120))
+        precondition(played.count == count + 1 && vm.dirty)
+        sound.stop()
+        print("PASS: sound defaults, rate limiting, save-copy coalescing, mute/zero volume, pending cancellation, persisted preferences and success-only model routing")
+    }
+
+    @MainActor static func checkSaveToast(container: NSPersistentContainer) async throws {
+        let store = CabinetStore(context: container.viewContext)
+        let record = try store.save(nil, title: "反馈验证", body: "保存前", tags: [])
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let vm = CabinetViewModel(context: container.viewContext, pasteboard: board)
+        var messages: [String] = []
+        let observation = vm.$toastMessage.compactMap { $0 }.sink { messages.append($0) }
+        defer { observation.cancel() }
+        vm.openDetail(record.objectID)
+        precondition(vm.autosave() && vm.toastMessage == nil)
+        vm.draft?.body = "自动保存完成"
+        precondition(vm.autosave() && vm.toastMessage == "已保存" && messages == ["已保存"])
+        precondition(vm.autosave() && messages.count == 1, "No-op blur must not restart a success toast")
+        precondition(vm.closeDetail() && vm.toastMessage == "已保存", "Closing the panel must retain save feedback in the grid")
+        vm.openDetail(record.objectID)
+        vm.draft?.body = "复制前也要保存"
+        vm.copy(close: false)
+        precondition(vm.toastMessage == "已复制到剪贴板" && board.string(forType: .string) == record.content)
+        precondition(messages.suffix(2) == ["已保存", "已复制到剪贴板"], "Latest copy feedback supersedes save feedback")
+        vm.draft?.body = ""
+        precondition(!vm.autosave() && vm.toastMessage == nil && vm.dirty,
+                     "A failed save must clear old success feedback and retain the draft")
+        vm.draft?.body = "失败后重试成功"
+        precondition(vm.autosave() && vm.toastMessage == "已保存")
+        let deadline = Date().addingTimeInterval(3)
+        while vm.toastMessage != nil && Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        precondition(vm.toastMessage == nil && vm.copiedItemID == nil && vm.feedback.isEmpty,
+                     "Success feedback must dismiss automatically")
+        precondition(vm.autosave() && vm.toastMessage == nil)
+        vm.newSnippet()
+        precondition(vm.autosave() && vm.toastMessage == nil, "An empty new draft must not claim it was saved")
+        print("PASS: save toast, no-op/blank suppression, panel-close persistence, latest-copy precedence, failure clearing and timed dismissal")
+    }
+
+    @MainActor static func checkGridInteraction(container: NSPersistentContainer) throws {
+        let store = CabinetStore(context: container.viewContext)
+        let first = try store.save(nil, title: "卡片 A", body: "第一张的完整正文", tags: [])
+        let second = try store.save(nil, title: "卡片 B", body: "第二张的完整正文", tags: [])
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let vm = CabinetViewModel(context: container.viewContext, pasteboard: board)
+        precondition(!vm.isDetailPresented, "Initial browsing must not mount an editor")
+        precondition(vm.openDetail(first.objectID) && vm.isDetailPresented)
+        vm.draft?.body = "收起前保存的中文 👩🏽‍💻"
+        precondition(vm.closeDetail() && !vm.isDetailPresented && first.content == "收起前保存的中文 👩🏽‍💻")
+        vm.openDetail(first.objectID)
+        vm.draft?.body = ""
+        precondition(!vm.closeDetail() && vm.isDetailPresented && vm.dirty, "Failed save must keep the panel open")
+        vm.draft?.body = "修正后保存"
+        vm.search("卡片")
+        precondition(!vm.isDetailPresented && first.content == "修正后保存")
+        vm.openDetail(first.objectID)
+        vm.navigate(.favorites)
+        precondition(!vm.isDetailPresented)
+        vm.navigate(.all)
+        vm.search("")
+
+        let clicks = CabinetCardInteraction(model: vm)
+        func mouse(_ type: NSEvent.EventType, _ count: Int, _ time: TimeInterval, x: CGFloat = 800) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: NSPoint(x: x, y: 400), modifierFlags: [], timestamp: time,
+                              windowNumber: 0, context: nil, eventNumber: 0, clickCount: count, pressure: 1)!
+        }
+        clicks.activate(first.objectID, event: mouse(.leftMouseUp, 1, 1))
+        precondition(vm.isDetailPresented, "Single click must open immediately without a double-click timer")
+        precondition(clicks.handle(mouse(.leftMouseDown, 2, 1 + NSEvent.doubleClickInterval / 2)))
+        precondition(board.string(forType: .string) == first.content && !vm.isDetailPresented,
+                     "Second click over the new panel must copy the original card and return to the grid")
+        precondition(clicks.handle(mouse(.leftMouseUp, 2, 1 + NSEvent.doubleClickInterval / 2)))
+        vm.openDetail(first.objectID)
+        clicks.activate(second.objectID, event: mouse(.leftMouseUp, 1, 3))
+        precondition(clicks.handle(mouse(.leftMouseDown, 2, 3 + NSEvent.doubleClickInterval / 2)))
+        precondition(board.string(forType: .string) == second.content && vm.isDetailPresented,
+                     "Copying another visible card must preserve an already open panel")
+        _ = clicks.handle(mouse(.leftMouseUp, 2, 3 + NSEvent.doubleClickInterval / 2))
+        clicks.activate(first.objectID, event: mouse(.leftMouseUp, 1, 5))
+        precondition(!clicks.handle(mouse(.leftMouseDown, 2, 5 + NSEvent.doubleClickInterval / 2, x: 100)))
+        precondition(!clicks.handle(mouse(.leftMouseDown, 2, 6 + NSEvent.doubleClickInterval)))
+        vm.openDetail(first.objectID)
+        vm.draft?.body = "再次点击当前卡片也要保存"
+        clicks.activate(first.objectID, event: mouse(.leftMouseUp, 1, 8))
+        precondition(!vm.isDetailPresented && first.content == "再次点击当前卡片也要保存",
+                     "A later click on the current card must save and close")
+        precondition(clicks.handle(mouse(.leftMouseDown, 2, 8 + NSEvent.doubleClickInterval / 2)))
+        precondition(board.string(forType: .string) == first.content && !vm.isDetailPresented,
+                     "Double-clicking the current card must still copy after the first click closes it")
+        _ = clicks.handle(mouse(.leftMouseUp, 2, 8 + NSEvent.doubleClickInterval / 2))
+        vm.openDetail(first.objectID)
+        vm.draft?.body = ""
+        clicks.activate(first.objectID, event: mouse(.leftMouseUp, 1, 10))
+        precondition(vm.isDetailPresented && vm.dirty, "Toggle must retain a draft that cannot be saved")
+        vm.draft?.body = "切换其他卡片前保存"
+        clicks.activate(second.objectID, event: mouse(.leftMouseUp, 1, 12))
+        precondition(vm.isDetailPresented && vm.selection == second.objectID && first.content == "切换其他卡片前保存")
+        vm.newSnippet()
+        precondition(vm.isDetailPresented && vm.draft?.commandID == nil)
+        vm.escape()
+        precondition(!vm.isDetailPresented && vm.snippetCount == 2)
+        print("PASS: grid default, immediate drawer open, repeat-click toggle with save/failure protection, other-card switch, navigation/search dismissal, double-click source routing, pointer/time boundaries and blank-new dismissal")
+    }
+
+    @MainActor static func checkReader(itemID: NSManagedObjectID, otherID: NSManagedObjectID) {
+        let text = "中文与 👩🏽‍💻 Café\r\n\n" + String(repeating: "长文跨行选择和宽度变化后仍应保留完整正文。\n", count: 240) + "末尾关键字"
+        let reader = CabinetReaderScrollView()
+        reader.frame = NSRect(x: 0, y: 0, width: 600, height: 360)
+        reader.update(itemID: itemID, text: text, query: "末尾关键字", dark: true, header: AnyView(Text("元信息")))
+        reader.layoutSubtreeIfNeeded()
+        let view = reader.content.textView
+        precondition(view.frame.minY > CabinetGrid.detailInset + 20, "Header height and spacing must be reserved above the body")
+        precondition(view.string == text && !view.isEditable && view.isSelectable)
+        precondition(reader.content.matches.count == 1)
+        let match = reader.content.matches[0]
+        precondition((text as NSString).substring(with: match) == "末尾关键字")
+        precondition(view.textStorage?.attribute(.backgroundColor, at: match.location, effectiveRange: nil) != nil)
+        precondition(reader.contentView.bounds.minY > 0, "A tail match must scroll into view")
+        let glyphs = view.layoutManager!.glyphRange(forCharacterRange: match, actualCharacterRange: nil)
+        let rect = view.layoutManager!.boundingRect(forGlyphRange: glyphs, in: view.textContainer!)
+        precondition(reader.contentView.bounds.intersects(reader.content.convert(rect, from: view)), "Matched text must be visible")
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        view.setSelectedRange(NSRange(location: 0, length: (text as NSString).length))
+        let textType = view.writablePasteboardTypes[0]
+        precondition(view.writeSelection(to: pasteboard, types: [textType]))
+        precondition(pasteboard.string(forType: textType) == text, "Cross-line copy must preserve original Unicode and newlines")
+        let selected = view.selectedRange()
+        let scrollPosition = reader.contentView.bounds.origin
+        reader.update(itemID: itemID, text: text, query: "末尾关键字", dark: false, header: AnyView(Text("元信息")))
+        reader.layoutSubtreeIfNeeded()
+        precondition(view.selectedRange() == selected && reader.contentView.bounds.origin == scrollPosition,
+                     "Unrelated updates and appearance changes must preserve selection and reading position")
+        let wideHeight = view.frame.height
+        reader.frame.size.width = 250
+        reader.needsLayout = true
+        reader.layoutSubtreeIfNeeded()
+        precondition(view.frame.height > wideHeight, "Narrow columns must wrap and expand the document")
+        reader.update(itemID: otherID, text: "短文", query: "", dark: true, header: AnyView(EmptyView()))
+        reader.layoutSubtreeIfNeeded()
+        precondition(view.string == "短文" && view.selectedRange().length == 0 && reader.contentView.bounds.minY == 0)
+        precondition(reader.content.matches.isEmpty)
+        let unicodeMatches = CabinetReaderDocument.matchRanges(in: "👩🏽‍💻 Café\r\nCAFE", query: "cafe")
+        precondition(unicodeMatches.count == 2)
+        precondition(("👩🏽‍💻 Café\r\nCAFE" as NSString).substring(with: unicodeMatches[0]) == "Café")
+        print("PASS: continuous reader preserves cross-line Unicode copy, tail-match highlight and visibility, reading position, wrapping and item reset")
+    }
+
+    @MainActor static func checkRefresh(container: NSPersistentContainer) async throws {
+        @MainActor func waitFor(_ condition: () -> Bool) async throws {
+            for _ in 0..<100 {
+                if condition() { return }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            precondition(condition(), "Timed out waiting for Core Data merge and coalesced UI refresh")
+        }
+        let context = container.viewContext
+        let store = CabinetStore(context: context)
+        let a = try store.createTag("标签 A")
+        let b = try store.createTag("标签 B")
+        let original = try store.save(nil, title: "", body: "原始首行\n正文", tags: [a])
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let vm = CabinetViewModel(context: context, pasteboard: board)
+        var catalogUpdates = 0
+        let subscription = vm.$tags.dropFirst().sink { _ in catalogUpdates += 1 }
+        vm.navigate(.tag(a.objectID))
+        vm.search("正文")
+        vm.navigate(.tag(b.objectID))
+        precondition(vm.items.isEmpty)
+        vm.navigate(.tag(a.objectID))
+        precondition(vm.query == "正文" && vm.selection == original.objectID)
+        precondition(catalogUpdates == 0, "Filtering and navigation must not reload the catalog")
+        withExtendedLifetime(subscription) {}
+        vm.search("")
+        precondition(vm.rowPreview(for: .snippet(original)).title == "原始首行")
+        _ = try store.save(original, title: "", body: "更新后的首行\n新正文", tags: [b])
+        original.isFavorite = true
+        try context.save()
+        try await waitFor { vm.items.isEmpty && vm.tagCounts[b.objectID] == 1 }
+        precondition(vm.items.isEmpty && vm.tagCounts[a.objectID] == nil && vm.tagCounts[b.objectID] == 1)
+        precondition(vm.favoriteCount == 1 && vm.rowPreview(for: .snippet(original)).title == "更新后的首行")
+        vm.navigate(.tag(b.objectID))
+        precondition(vm.items.count == 1)
+        try store.trash(original)
+        try await waitFor { vm.items.isEmpty && vm.snippetCount == 0 }
+        precondition(vm.items.isEmpty && vm.snippetCount == 0 && vm.favoriteCount == 0)
+        try store.restore(original)
+        try await waitFor { vm.items.count == 1 && vm.snippetCount == 1 }
+        precondition(vm.items.count == 1 && vm.snippetCount == 1)
+        try store.trash(b)
+        try await waitFor { vm.location == .all && vm.tags.count == 1 }
+        precondition(vm.location == .all && vm.tags.count == 1 && vm.snippetCount == 1)
+        try store.restore(b)
+        try await waitFor { vm.tagCounts[b.objectID] == 1 }
+        precondition(vm.tagCounts[b.objectID] == 1)
+        let tagID = a.objectID
+        let worker = container.newBackgroundContext()
+        try worker.performAndWait {
+            let target = try worker.existingObject(with: tagID) as! cheatsheet.Category
+            _ = try CabinetStore(context: worker).save(nil, title: "", body: "后台新增片段", tags: [target])
+        }
+        try await waitFor { vm.snippetCount == 2 }
+        vm.navigate(.tag(a.objectID))
+        precondition(vm.items.count == 1 && vm.items[0].body == "后台新增片段" && vm.snippetCount == 2)
+        let editingID = vm.selection!
+        precondition(vm.draft?.commandID == editingID && !vm.dirty, "Selected snippets must be editable immediately")
+        let firstSession = vm.editorSession
+        vm.search("后台新增")
+        vm.draft?.body = "已自动保存的中文 👩🏽‍💻\n第二行"
+        precondition(vm.autosave() && !vm.dirty && vm.saveStatus == "已保存")
+        precondition(vm.query == "后台新增" && vm.selection == editingID && vm.draft?.commandID == editingID,
+                     "Saving a draft that no longer matches must preserve the current editor and query")
+        let edited = try context.existingObject(with: editingID) as! Command
+        precondition(edited.content == "已自动保存的中文 👩🏽‍💻\n第二行")
+        let savedAt = edited.updatedAt
+        precondition(vm.autosave() && edited.updatedAt == savedAt, "Repeated blur without changes must not write")
+        vm.draft?.body = ""
+        precondition(!vm.navigate(.all) && vm.selection == editingID && vm.dirty && vm.draft?.body == "",
+                     "Failed validation must preserve text and prevent navigation")
+        precondition(edited.content == "已自动保存的中文 👩🏽‍💻\n第二行")
+        vm.draft?.body = "离开前自动保存"
+        precondition(vm.navigate(.all) && edited.content == "离开前自动保存")
+        vm.select(original.objectID)
+        vm.draft?.body = "旧事件不能保存这里"
+        precondition(vm.autosave(session: firstSession) && vm.dirty && original.content != "旧事件不能保存这里")
+        precondition(vm.select(editingID) && original.content == "旧事件不能保存这里")
+        vm.navigate(.clipboard)
+        precondition(vm.draft == nil, "Clipboard source must remain read-only")
+        vm.navigate(.all)
+        let beforeBlank = vm.snippetCount
+        vm.newSnippet()
+        precondition(vm.navigate(.tag(a.objectID)) && vm.snippetCount == beforeBlank, "Blank drafts must not create records")
+        print("PASS: direct editing, Unicode autosave, filtered selection retention, no-op blur, save failure recovery, stale-session isolation and blank/history protection")
+        vm.newSnippet()
+        vm.draft?.body = "正在编辑"
+        precondition(vm.navigate(.tag(a.objectID)) && vm.draft?.body == "正在编辑",
+                     "Clicking the current tag must keep the draft")
+        print("PASS: cached navigation preserves selection/query without catalog refresh; edit, retag, trash, restore and background insert refresh results and counts")
+    }
+}
+
+private final class RejectingSaveContext: NSManagedObjectContext, @unchecked Sendable {
+    var rejectSave = false
+    override func save() throws {
+        if rejectSave { throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteOutOfSpaceError) }
+        try super.save()
     }
 }

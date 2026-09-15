@@ -2,6 +2,12 @@ import AppKit
 import CoreData
 import SwiftUI
 
+enum CabinetGrid {
+    static let detailInset: CGFloat = 24
+    static let headerHeight: CGFloat = 52
+    static let footerHeight: CGFloat = 64
+}
+
 struct CabinetPalette {
     let dark: Bool
     var reader: Color { Color(white: dark ? 0.205 : 0.96) }
@@ -70,6 +76,13 @@ struct CabinetTagFlow: Layout {
             x += size.width + spacing
             height = max(height, size.height)
         }
+        // 每行按最高标签居中，避免短按钮贴在行顶。
+        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        var rowHeights: [CGFloat: CGFloat] = [:]
+        for index in points.indices { rowHeights[points[index].y] = max(rowHeights[points[index].y] ?? 0, sizes[index].height) }
+        for index in points.indices {
+            points[index].y += ((rowHeights[points[index].y] ?? 0) - sizes[index].height) / 2
+        }
         return (CGSize(width: width, height: y + height), points)
     }
 }
@@ -80,28 +93,43 @@ struct CabinetEditor: View {
     @State private var showTitle = false
     @State private var tagSearch = ""
     @State private var choosingTags = false
+    @FocusState private var titleFocused: Bool
 
     private var draft: Binding<CabinetDraft> {
-        Binding(get: { model.draft ?? CabinetDraft() }, set: { model.draft = $0 })
+        let session = model.editorSession
+        return Binding(get: { model.draft ?? CabinetDraft() }, set: {
+            guard model.editorSession == session else { return }
+            model.draft = $0
+        })
     }
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(model.draft?.commandID == nil ? "新建片段" : "编辑片段")
+                Button { model.closeDetail(animated: true) } label: { Image(systemName: "sidebar.right") }
+                    .buttonStyle(.borderless).help("收起面板（Esc）").accessibilityLabel("收起编辑面板")
+                Text(model.draft?.commandID == nil ? "新建片段" : "片段")
+                if let id = model.draft?.commandID,
+                   let command = try? model.context.existingObject(with: id) as? Command {
+                    CabinetFavoriteButton(command: command, model: model)
+                }
                 Spacer()
                 if let id = model.draft?.commandID,
                    let item = try? model.context.existingObject(with: id) as? Command, item.originID != nil {
                     Button("返回剪贴板") { model.navigate(.clipboard) }.buttonStyle(.borderless)
                 }
-                Text(model.dirty ? "未保存" : "尚无修改").foregroundStyle(.tertiary)
-            }.font(.system(size: 11)).foregroundStyle(.secondary).padding(.horizontal, 22).frame(height: 52)
+                Text(model.saveStatus.hasPrefix("保存失败") ? "保存失败" : (model.dirty ? "待保存" : (model.saveStatus.isEmpty ? "可直接编辑" : model.saveStatus)))
+                    .foregroundStyle(model.saveStatus.hasPrefix("保存失败") ? .red : .secondary)
+                    .lineLimit(1)
+            }.font(.system(size: 11)).foregroundStyle(.secondary).padding(.horizontal, CabinetGrid.detailInset).frame(height: CabinetGrid.headerHeight)
             Divider()
+            GeometryReader { geometry in
             VStack(alignment: .leading, spacing: 17) {
                 HStack(alignment: .top) {
                     CabinetTagFlow(spacing: 6) {
                         ForEach(model.tags.filter { model.draft?.tags.contains($0.objectID) == true }) { tag in
                             Button {
                                 model.draft?.tags.remove(tag.objectID)
+                                model.autosave()
                             } label: {
                                 HStack(spacing: 5) {
                                     Text(tag.name ?? "")
@@ -118,40 +146,48 @@ struct CabinetEditor: View {
                         Button(showTitle ? "使用正文首行作为标题" : "添加自定义标题") {
                             showTitle.toggle()
                             if !showTitle { model.draft?.title = "" }
+                            model.autosave()
                         }
                         Button("添加图片…") { addImage() }
-                        if model.draft?.image != nil { Button("移除图片") { model.draft?.image = nil } }
+                        if model.draft?.image != nil { Button("移除图片") { model.draft?.image = nil; model.autosave() } }
                     } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).fixedSize()
                 }
                 if showTitle || !(model.draft?.title.isEmpty ?? true) {
                     TextField("自定义标题（可选）", text: draft.title)
                         .font(.system(size: 16, weight: .medium)).textFieldStyle(.plain)
+                        .focused($titleFocused)
                 }
                 if let data = model.draft?.image, let image = NSImage(data: data) {
-                    Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: 170)
+                    Image(nsImage: image).resizable().scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: min(170, max(60, geometry.size.height * 0.25)))
                 }
-                CabinetTextEditor(text: draft.body)
+                CabinetTextEditor(text: draft.body, session: model.editorSession, focusRequest: model.editorFocusRequest,
+                                  query: model.query, onBlur: { model.autosave(session: $0) })
                     .overlay(alignment: .topLeading) {
                         if model.draft?.body.isEmpty ?? true {
                             Text("直接写下内容，首行会成为标题…")
-                                .font(.system(size: 14)).foregroundStyle(.tertiary).padding(.top, 5).padding(.leading, 5)
+                                .font(.system(size: 14)).foregroundStyle(.tertiary).padding(.top, 5)
                                 .allowsHitTesting(false)
                         }
                     }
                 HStack {
                     Text("\(model.draft?.body.count ?? 0) 字符")
                     Spacer()
-                    Text("正文首行作为默认标题")
+                    Text("离开输入框自动保存")
                 }.font(.system(size: 10)).foregroundStyle(.tertiary)
-            }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }.padding(CabinetGrid.detailInset).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
             Divider()
             HStack(spacing: 10) {
-                Button("取消") { model.cancelEdit() }
+                Text(model.feedback).font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
-                Button("保存并复制") { model.copy(close: false) }
-                Button("保存") { _ = model.save() }.buttonStyle(.borderedProminent)
-            }.controlSize(.large).padding(18)
+                Button("复制") { model.copy(close: false) }
+                Button("复制并收起") { model.copy(close: true) }.buttonStyle(.borderedProminent)
+            }.controlSize(.large).padding(.horizontal, CabinetGrid.detailInset).frame(height: CabinetGrid.footerHeight)
         }.onAppear { showTitle = !(model.draft?.title.isEmpty ?? true) }
+            .onChange(of: model.editorSession) { _, _ in showTitle = !(model.draft?.title.isEmpty ?? true) }
+            .onChange(of: titleFocused) { _, focused in if !focused { model.autosave() } }
+            .onChange(of: choosingTags) { _, open in if !open { model.autosave() } }
     }
 
     private var tagPicker: some View {
@@ -195,6 +231,7 @@ struct CabinetEditor: View {
                 let data = try Data(contentsOf: url)
                 guard NSImage(data: data) != nil else { throw CabinetError.invalid("无法读取这张图片") }
                 model.draft?.image = data
+                model.autosave()
             }
         }
     }
@@ -202,10 +239,14 @@ struct CabinetEditor: View {
 
 struct CabinetTextEditor: NSViewRepresentable {
     @Binding var text: String
+    var session = UUID()
+    var focusRequest = 0
+    var query = ""
+    var onBlur: (UUID) -> Void = { _ in }
     @Environment(\.colorScheme) private var scheme
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSTextView.scrollableTextView()
+        let scroll = CabinetEditableTextView.scrollableTextView()
         let view = scroll.documentView as! NSTextView
         view.delegate = context.coordinator
         view.isRichText = false
@@ -216,6 +257,7 @@ struct CabinetTextEditor: NSViewRepresentable {
         view.drawsBackground = false
         scroll.drawsBackground = false
         view.textContainerInset = NSSize(width: 0, height: 5)
+        view.textContainer?.lineFragmentPadding = 0
         view.string = text
         view.font = .systemFont(ofSize: 14)
         let paragraph = NSMutableParagraphStyle()
@@ -226,13 +268,61 @@ struct CabinetTextEditor: NSViewRepresentable {
         view.autoresizingMask = [.width]
         view.textContainer?.widthTracksTextView = true
         view.setAccessibilityLabel("片段正文")
-        DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
         return scroll
     }
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.parent = self
         let view = scroll.documentView as! NSTextView
+        let changedSession = context.coordinator.session != session
+        if changedSession {
+            context.coordinator.session = session
+            view.undoManager?.removeAllActions()
+        }
+        let changedText = context.coordinator.text != text
         if view.string != text && !view.hasMarkedText() { view.string = text }
+        if changedText, !view.hasMarkedText(), let paragraph = view.defaultParagraphStyle {
+            view.textStorage?.addAttribute(.paragraphStyle, value: paragraph,
+                                          range: NSRange(location: 0, length: (view.string as NSString).length))
+        }
+        if let editable = view as? CabinetEditableTextView {
+            editable.onBlur = { [weak coordinator = context.coordinator, weak view] in
+                guard let coordinator, let view, !view.hasMarkedText() else { return }
+                coordinator.parent.text = view.string
+                coordinator.parent.onBlur(coordinator.parent.session)
+            }
+        }
+        if changedSession { view.setSelectedRange(NSRange(location: 0, length: 0)); view.scrollRangeToVisible(NSRange(location: 0, length: 0)) }
+        if changedSession || changedText || context.coordinator.query != query, !view.hasMarkedText() {
+            let changedQuery = context.coordinator.query != query
+            context.coordinator.query = query
+            context.coordinator.text = text
+            let matches = CabinetReaderDocument.matchRanges(in: text, query: query)
+            view.layoutManager?.removeTemporaryAttribute(.backgroundColor, forCharacterRange: NSRange(location: 0, length: (text as NSString).length))
+            for match in matches {
+                view.layoutManager?.addTemporaryAttribute(.backgroundColor, value: NSColor.controlAccentColor.withAlphaComponent(0.2), forCharacterRange: match)
+            }
+            if changedQuery && query.isEmpty {
+                view.setSelectedRange(NSRange(location: 0, length: 0))
+                view.scrollRangeToVisible(NSRange(location: 0, length: 0))
+            }
+            if (changedSession || changedQuery), let match = matches.first {
+                let expected = session
+                DispatchQueue.main.async { [weak coordinator = context.coordinator, weak view] in
+                    guard coordinator?.session == expected, coordinator?.query == query, let view,
+                          NSMaxRange(match) <= (view.string as NSString).length else { return }
+                    view.setSelectedRange(NSRange(location: match.location, length: 0))
+                    view.scrollRangeToVisible(match)
+                }
+            }
+        }
+        if context.coordinator.focusRequest != focusRequest {
+            context.coordinator.focusRequest = focusRequest
+            let expected = session
+            DispatchQueue.main.async { [weak coordinator = context.coordinator, weak view] in
+                guard coordinator?.session == expected, let view else { return }
+                view.window?.makeFirstResponder(view)
+            }
+        }
         view.textColor = scheme == .dark ? .init(white: 0.91, alpha: 1) : .init(white: 0.12, alpha: 1)
         view.insertionPointColor = view.textColor ?? .labelColor
         let font = CabinetContent.isMonospaced(text) ? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular) : NSFont.systemFont(ofSize: 14)
@@ -240,10 +330,28 @@ struct CabinetTextEditor: NSViewRepresentable {
     }
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: CabinetTextEditor
+        var session: UUID?
+        var focusRequest = 0
+        var query = ""
+        var text = ""
         init(_ parent: CabinetTextEditor) { self.parent = parent }
         func textDidChange(_ notification: Notification) {
-            guard let view = notification.object as? NSTextView else { return }
+            guard let view = notification.object as? NSTextView, !view.hasMarkedText() else { return }
             parent.text = view.string
         }
+        func textDidEndEditing(_ notification: Notification) {
+            guard let view = notification.object as? NSTextView, !view.hasMarkedText() else { return }
+            parent.text = view.string
+            parent.onBlur(parent.session)
+        }
+    }
+}
+
+final class CabinetEditableTextView: NSTextView {
+    var onBlur: (() -> Void)?
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned { onBlur?() }
+        return resigned
     }
 }

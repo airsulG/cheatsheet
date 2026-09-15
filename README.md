@@ -33,6 +33,16 @@ python3 scripts/verify_core_behaviors.py /tmp/cheatsheet-build --cabinet
 
 脚本不启动剪贴板监控，不修改真实数据库或系统剪贴板。窗口输入检查会短暂显示一个测试输入框。它不能替代完整 SwiftUI 界面、中文输入法、拖拽手感和长时间运行的体验验收。`cheatsheetTests/` 保留已有 XCTest 文件，当前 Xcode 工程尚未配置测试 target；不能把构建成功视为这些 XCTest 已执行。
 
+### 测量标签切换与长文布局
+
+用 `SWIFT_OPTIMIZATION_LEVEL=-O ENABLE_TESTABILITY=YES` 构建 Debug，再运行：
+
+```sh
+python3 scripts/verify_cabinet_performance.py /tmp/cheatsheet-build
+```
+
+默认使用独立模拟数据，可在命令末尾显式附上 SQLite 副本路径进行只读测量。脚本分别测量无界面的标签筛选，以及同一正文在旧逐行结构与当前连续原生阅读区中的布局；输出预热后的中位数、p95 和最大值。布局每组只有六次测量，p95 在这里等于样本最大值；这些数值用于对照，不作为实际点击延迟。阅读区保留跨行选择、搜索高亮与定位，相关修复见 [Issue #9](https://github.com/airsulG/cheatsheet/issues/9)。
+
 ## 运行隔离验收版
 
 ```sh

@@ -22,6 +22,8 @@ final class CabinetStore {
             throw CabinetError.invalid("请输入正文或添加图片")
         }
         let item = command ?? Command(context: context, name: "", content: "")
+        let keys = ["name", "content", "tags", "tagsMigrated", "category", "imageData", "originID", "updatedAt"]
+        let previous = item.dictionaryWithValues(forKeys: keys)
         item.name = title.trimmingCharacters(in: .whitespacesAndNewlines)
         item.content = body
         item.tags = NSSet(set: tags.filter { $0.deletedAt == nil })
@@ -30,7 +32,13 @@ final class CabinetStore {
         item.imageData = image
         item.originID = origin ?? item.originID
         item.updatedAt = Date()
-        try context.save()
+        do { try context.save() }
+        catch {
+            // 保存失败后只恢复本次写入，避免后续自动合并/迁移误存半成品。
+            if command == nil { context.delete(item) }
+            else { item.setValuesForKeys(previous) }
+            throw error
+        }
         return item
     }
 
@@ -135,8 +143,15 @@ extension Command {
 
 enum CabinetContent {
     static func title(_ text: String, image: Bool = false) -> String {
-        text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
-            .first(where: { !$0.isEmpty }) ?? (image ? "图片" : "未命名片段")
+        var start = text.startIndex
+        while start < text.endIndex {
+            let end = text[start...].firstIndex(where: \.isNewline) ?? text.endIndex
+            let line = text[start..<end].trimmingCharacters(in: .whitespaces)
+            if !line.isEmpty { return line }
+            guard end < text.endIndex else { break }
+            start = text.index(after: end)
+        }
+        return image ? "图片" : "未命名片段"
     }
     static func isMonospaced(_ text: String) -> Bool {
         text.hasPrefix("/") || text.hasPrefix("~/") || text.hasPrefix("git ") ||

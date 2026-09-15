@@ -48,11 +48,18 @@ final class CabinetViewModel: ObservableObject {
     @Published var deleted: [NSManagedObject] = []
     @Published var selection: NSManagedObjectID?
     @Published var selectionScrollRequest = 0
+    @Published private(set) var isDetailPresented = false
+    var detailUsesMotion = false
+    var gridColumnCount = 1
     @Published var draft: CabinetDraft?
+    @Published private(set) var editorSession = UUID()
+    @Published private(set) var editorFocusRequest = 0
+    @Published private(set) var saveStatus = ""
     @Published var error: String?
     @Published var feedback = ""
     @Published var copiedItemID: NSManagedObjectID?
-    private var copyFeedbackTask: Task<Void, Never>?
+    @Published private(set) var toastMessage: String?
+    private var toastTask: Task<Void, Never>?
     @Published var clipboardCount = 0
     @Published var snippetCount = 0
     @Published var favoriteCount = 0
@@ -61,11 +68,17 @@ final class CabinetViewModel: ObservableObject {
     var closeWindow: (() -> Void)?
     var focusSearch: (() -> Void)?
     var searchHasFocus = false
+    var successFeedback: ((CabinetSuccess) -> Void)?
+    var cancelPendingFeedback: (() -> Void)?
     private var originalDraft: CabinetDraft?
+    private var pinnedDraftID: NSManagedObjectID?
     private var contexts: [CabinetLocation: (String, NSManagedObjectID?)] = [:]
     private var observer: NSObjectProtocol?
     private var refreshScheduled = false
     private let pasteboard: NSPasteboard
+    private var rowPreviews: [NSManagedObjectID: (query: String, preview: CabinetRowPreview)] = [:]
+    private var activeCommands: [Command] = []
+    private var commandsByTag: [NSManagedObjectID: [Command]] = [:]
 
     init(context: NSManagedObjectContext, pasteboard: NSPasteboard = .general) {
         self.context = context
@@ -91,6 +104,13 @@ final class CabinetViewModel: ObservableObject {
     }
 
     var selected: CabinetItem? { items.first { $0.id == selection } }
+    func rowPreview(for item: CabinetItem) -> CabinetRowPreview {
+        if let cached = rowPreviews[item.id], cached.query == query { return cached.preview }
+        let preview = CabinetRowPreview(item: item, query: query)
+        if rowPreviews.count >= 256 { rowPreviews.removeAll(keepingCapacity: true) }
+        rowPreviews[item.id] = (query, preview)
+        return preview
+    }
     var collectionLabel: String {
         guard case .history(let history) = selected, let id = history.id else { return "保存为片段" }
         let request: NSFetchRequest<Command> = Command.fetchRequest()
@@ -109,6 +129,7 @@ final class CabinetViewModel: ObservableObject {
     }
 
     func reload() {
+        rowPreviews.removeAll(keepingCapacity: true)
         perform {
             let tr: NSFetchRequest<Category> = Category.fetchRequest()
             tr.sortDescriptors = [NSSortDescriptor(key: "order", ascending: true), NSSortDescriptor(key: "name", ascending: true)]
@@ -119,22 +140,38 @@ final class CabinetViewModel: ObservableObject {
             let allGroups = try context.fetch(gr)
             groups = allGroups.filter { $0.deletedAt == nil }
             let cr: NSFetchRequest<Command> = Command.fetchRequest()
-            cr.fetchBatchSize = 80
+            cr.relationshipKeyPathsForPrefetching = ["tags"]
             let commands = try context.fetch(cr)
             let active = commands.filter { $0.deletedAt == nil }
-            snippetCount = active.count
-            favoriteCount = active.filter(\.isFavorite).count
-            tagCounts = [:]
+            activeCommands = active
+            var byTag: [NSManagedObjectID: [Command]] = [:]
             for command in active {
-                for tag in command.activeTags { tagCounts[tag.objectID, default: 0] += 1 }
+                for tag in command.tags as? Set<Category> ?? [] where tag.deletedAt == nil {
+                    byTag[tag.objectID, default: []].append(command)
+                }
             }
+            commandsByTag = byTag
+            let counts = byTag.mapValues(\.count)
+            if tagCounts != counts { tagCounts = counts }
+            if snippetCount != active.count { snippetCount = active.count }
+            let favorites = active.filter(\.isFavorite).count
+            if favoriteCount != favorites { favoriteCount = favorites }
             let hr: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
-            clipboardCount = try context.count(for: hr)
+            let historyCount = try context.count(for: hr)
+            if clipboardCount != historyCount { clipboardCount = historyCount }
             deleted = (allTags.filter { $0.deletedAt != nil } as [NSManagedObject]) +
                 (allGroups.filter { $0.deletedAt != nil } as [NSManagedObject]) +
                 (commands.filter { $0.deletedAt != nil } as [NSManagedObject])
             if case .tag(let id) = location, !tags.contains(where: { $0.objectID == id }) { location = .all }
+            refreshItems()
+        }
+    }
+
+    /// 导航、搜索和排序使用已加载的片段；只有数据变化或重新打开窗口才重建统计。
+    private func refreshItems() {
+        perform {
             if location == .clipboard {
+                let hr: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
                 hr.fetchBatchSize = 80
                 hr.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: false)]
                 let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -142,18 +179,19 @@ final class CabinetViewModel: ObservableObject {
                 items = try context.fetch(hr).map(CabinetItem.history)
             } else {
                 let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-                var result = active.filter { c in
-                    switch location {
-                    case .favorites: return c.isFavorite
-                    case .tag(let id): return c.activeTags.contains { $0.objectID == id }
-                    case .trash: return false
-                    default: return true
-                    }
+                var result: [Command]
+                switch location {
+                case .favorites: result = activeCommands.filter(\.isFavorite)
+                case .tag(let id): result = commandsByTag[id] ?? []
+                case .trash: result = []
+                default: result = activeCommands
                 }
                 if !q.isEmpty { result = result.filter {
                     ($0.name ?? "").localizedStandardContains(q) || ($0.content ?? "").localizedStandardContains(q) ||
                     $0.activeTags.contains { ($0.name ?? "").localizedStandardContains(q) }
                 } }
+                if let id = pinnedDraftID, let pinned = activeCommands.first(where: { $0.objectID == id }),
+                   !result.contains(where: { $0.objectID == id }) { result.append(pinned) }
                 result.sort {
                     switch sort {
                     case "标题": return $0.displayTitle.localizedStandardCompare($1.displayTitle) == .orderedAscending
@@ -164,47 +202,45 @@ final class CabinetViewModel: ObservableObject {
                 items = result.map(CabinetItem.snippet)
             }
             if !items.contains(where: { $0.id == selection }) { selection = items.first?.id }
+            synchronizeEditor()
         }
     }
 
     @discardableResult
     func allowLeaving() -> Bool {
-        guard dirty else { return true }
-        let alert = NSAlert()
-        alert.messageText = "保留正在编辑的内容？"
-        alert.informativeText = "保存后继续，或留在这里编辑。"
-        alert.addButton(withTitle: "继续编辑")
-        alert.addButton(withTitle: "保存并继续")
-        alert.addButton(withTitle: "放弃修改")
-        switch alert.runModal() {
-        case .alertSecondButtonReturn: return save()
-        case .alertThirdButtonReturn: draft = nil; originalDraft = nil; return true
-        default: return false
-        }
+        autosave()
     }
 
     @discardableResult
     func navigate(_ target: CabinetLocation) -> Bool {
+        guard target != location else { return true }
         guard allowLeaving() else { return false }
         contexts[location] = (query, selection)
-        draft = nil; originalDraft = nil
+        detailUsesMotion = false; isDetailPresented = false
+        draft = nil; originalDraft = nil; pinnedDraftID = nil
         location = target
         query = contexts[target]?.0 ?? ""
         selection = contexts[target]?.1
-        reload()
+        refreshItems()
         selectionScrollRequest += 1
         return true
     }
     func search(_ text: String) {
         guard text != query else { return }
         guard !dirty || allowLeaving() else { return }
-        draft = nil; originalDraft = nil; query = text; reload()
+        detailUsesMotion = false; isDetailPresented = false
+        draft = nil; originalDraft = nil; pinnedDraftID = nil; query = text; refreshItems()
     }
     @discardableResult
-    func select(_ id: NSManagedObjectID) -> Bool {
-        if id == selection { return true }
+    func select(_ id: NSManagedObjectID, focusEditor: Bool = false) -> Bool {
+        if id == selection {
+            if focusEditor { editorFocusRequest += 1 }
+            return true
+        }
         guard allowLeaving() else { return false }
-        draft = nil; originalDraft = nil; selection = id
+        draft = nil; originalDraft = nil; pinnedDraftID = nil; selection = id
+        synchronizeEditor()
+        if focusEditor { editorFocusRequest += 1 }
         return true
     }
     func moveSelection(_ offset: Int) {
@@ -219,29 +255,88 @@ final class CabinetViewModel: ObservableObject {
         var value = CabinetDraft()
         if case .tag(let id) = location { value.tags = [id] }
         if location == .clipboard || location == .trash { navigate(.all) }
+        selection = nil; pinnedDraftID = nil
         draft = value; originalDraft = value
+        detailUsesMotion = false; isDetailPresented = true
+        editorSession = UUID(); saveStatus = ""; editorFocusRequest += 1
     }
     func edit() {
-        guard case .snippet(let command) = selected, allowLeaving() else { return }
+        synchronizeEditor()
+        detailUsesMotion = false; isDetailPresented = true
+        editorFocusRequest += 1
+    }
+    @discardableResult
+    func toggleDetail(_ id: NSManagedObjectID, animated: Bool = false) -> Bool {
+        if isDetailPresented && selection == id { return closeDetail(animated: animated) }
+        return openDetail(id, animated: animated)
+    }
+    @discardableResult
+    func openDetail(_ id: NSManagedObjectID, animated: Bool = false) -> Bool {
+        guard select(id) else { return false }
+        detailUsesMotion = animated; isDetailPresented = true
+        editorFocusRequest += 1
+        return true
+    }
+    @discardableResult
+    func closeDetail(animated: Bool = false) -> Bool {
+        guard allowLeaving() else { return false }
+        detailUsesMotion = animated; isDetailPresented = false
+        draft = nil; originalDraft = nil; pinnedDraftID = nil
+        editorSession = UUID()
+        refreshItems()
+        focusSearch?()
+        return true
+    }
+    func escape() {
+        if isDetailPresented { closeDetail() }
+        else { requestClose() }
+    }
+    private func synchronizeEditor() {
+        // 后台刷新不能替换正在输入的内容，也不能给空白新片段填入旧片段。
+        if dirty || (draft != nil && draft?.commandID == nil) { return }
+        guard case .snippet(let command) = selected else {
+            draft = nil; originalDraft = nil; return
+        }
         let value = CabinetDraft(title: command.name ?? "", body: command.content ?? "",
             tags: Set(command.activeTags.map(\.objectID)), image: command.imageData, commandID: command.objectID)
+        if draft == value { return }
+        let changedItem = draft?.commandID != value.commandID
         draft = value; originalDraft = value
+        if changedItem { editorSession = UUID(); saveStatus = "" }
+    }
+    @discardableResult
+    func autosave(session: UUID? = nil) -> Bool {
+        if let session, session != editorSession { return true }
+        guard dirty, let value = draft else { return true }
+        // 离开尚未输入内容的新建页，不生成空记录。
+        if value.commandID == nil && value.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && value.image == nil && value.title.isEmpty { return true }
+        return save()
     }
     @discardableResult
     func save() -> Bool {
         guard let value = draft else { return true }
+        if !dirty && value.commandID != nil { return true }
         do {
             let command = try value.commandID.map { try context.existingObject(with: $0) as! Command }
+            if command?.deletedAt != nil { throw CabinetError.invalid("片段已移到最近删除，输入内容仍保留，请先恢复片段。") }
             let selectedTags = Set(value.tags.compactMap { try? context.existingObject(with: $0) as? Category })
             let saved = try store.save(command, title: value.title, body: value.body, tags: selectedTags, image: value.image)
-            draft = nil; originalDraft = nil
-            query = ""
-            if case .tag(let id) = location, !selectedTags.contains(where: { $0.objectID == id }) { location = .all }
-            if location == .favorites && !saved.isFavorite { location = .all }
-            selection = saved.objectID; reload()
-            feedback = "已保存"
+            var persisted = value
+            persisted.commandID = saved.objectID; persisted.title = saved.name ?? ""
+            draft = persisted; originalDraft = persisted
+            selection = saved.objectID; pinnedDraftID = saved.objectID
+            saveStatus = "已保存"; error = nil
+            reload()
+            showToast("已保存")
+            successFeedback?(.saved)
+            // 通知刷新列表；不清空搜索，也不让失焦保存改变当前位置。
             return true
-        } catch { self.error = error.localizedDescription; return false }
+        } catch {
+            clearToast()
+            cancelPendingFeedback?()
+            saveStatus = "保存失败，内容已保留"; self.error = error.localizedDescription
+            return false
+        }
     }
     func cancelEdit() {
         guard allowLeaving() else { return }
@@ -258,17 +353,26 @@ final class CabinetViewModel: ObservableObject {
             success = pasteboard.writeObjects([image])
             if !item.body.isEmpty { _ = pasteboard.setString(item.body, forType: .string) }
         } else { success = pasteboard.setString(item.body, forType: .string) }
-        guard success else { error = "复制失败，请重试"; return }
-        feedback = "已复制"
-        copiedItemID = item.id
-        copyFeedbackTask?.cancel()
-        copyFeedbackTask = Task { @MainActor [weak self] in
+        guard success else { clearToast(); cancelPendingFeedback?(); error = "复制失败，请重试"; return }
+        showToast("已复制到剪贴板", copiedID: item.id)
+        successFeedback?(.copied)
+        if close { closeWindow?() }
+    }
+    private func showToast(_ message: String, copiedID: NSManagedObjectID? = nil) {
+        toastTask?.cancel()
+        toastMessage = message
+        copiedItemID = copiedID
+        feedback = copiedID == nil ? "" : "已复制"
+        toastTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled else { return }
-            self?.copiedItemID = nil
-            if self?.feedback == "已复制" { self?.feedback = "" }
+            self?.clearToast()
         }
-        if close { closeWindow?() }
+    }
+    private func clearToast() {
+        toastTask?.cancel()
+        toastTask = nil
+        toastMessage = nil; copiedItemID = nil; feedback = ""
     }
     func collect() {
         guard case .history(let source) = selected else { return }
@@ -278,7 +382,9 @@ final class CabinetViewModel: ObservableObject {
             query = ""; selection = item.objectID; reload(); edit()
         }
     }
-    func requestClose() { if allowLeaving() { closeWindow?() } }
+    func requestClose() {
+        if allowLeaving() { detailUsesMotion = false; isDetailPresented = false; closeWindow?() }
+    }
     func deleteHistory(_ history: ClipboardItem) {
         let alert = NSAlert()
         alert.messageText = "删除这条剪贴板记录？"
@@ -291,7 +397,7 @@ final class CabinetViewModel: ObservableObject {
     func setSort(_ value: String) {
         sort = value
         UserDefaults.standard.set(value, forKey: "cabinetSort")
-        reload()
+        refreshItems()
     }
     func move(_ item: CabinetItem, offset: Int) {
         guard allowLeaving(), case .snippet = item, let index = items.firstIndex(where: { $0.id == item.id }) else { return }
@@ -309,5 +415,21 @@ final class CabinetViewModel: ObservableObject {
     }
     func perform(_ action: () throws -> Void) {
         do { try action() } catch { self.error = error.localizedDescription }
+    }
+    @discardableResult
+    func toggleFavorite(_ command: Command) -> Bool {
+        guard allowLeaving() else { return false }
+        let previous = command.isFavorite
+        let timestamp = command.updatedAt
+        do {
+            command.toggleFavorite()
+            try context.save()
+            return true
+        } catch {
+            command.isFavorite = previous
+            command.updatedAt = timestamp
+            self.error = error.localizedDescription
+            return false
+        }
     }
 }

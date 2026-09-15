@@ -69,7 +69,7 @@ struct AppSettingsView: View {
             }
             .buttonStyle(.bordered).controlSize(.small)
         }
-        .padding(.horizontal, 26).frame(height: 88)
+        .padding(.horizontal, CabinetGrid.detailInset).frame(height: 88)
     }
 
     private var sidebar: some View {
@@ -81,7 +81,10 @@ struct AppSettingsView: View {
                 .padding(.horizontal, 12).padding(.bottom, 6)
             ForEach(AppSettingsSection.allCases) { section in
                 Button { selectedSection = section } label: {
-                    Label(section.title, systemImage: section.systemImage)
+                    HStack(spacing: 10) {
+                        Image(systemName: section.systemImage).frame(width: 18)
+                        Text(section.title)
+                    }
                         .font(.system(size: 12, weight: .medium))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 12).frame(height: 36)
@@ -152,17 +155,21 @@ private struct ShelfSettingsView: View {
     var body: some View {
         CabinetSettingsPage {
             CabinetSettingsSection {
-                Picker("外观", selection: $appearance) {
-                    Text("深色").tag("dark")
-                    Text("浅色").tag("light")
+                HStack {
+                    Text("外观")
+                    Spacer()
+                    Picker("外观", selection: $appearance) {
+                        Text("深色").tag("dark")
+                        Text("浅色").tag("light")
+                    }.pickerStyle(.segmented).labelsHidden().fixedSize()
                 }
-                .pickerStyle(.segmented)
             } header: { Text("外观") }
+            CabinetSoundSettings()
             CabinetSettingsSection {
                 Text("在列表标题旁切换最近修改、标题或手动顺序。片段右键菜单支持上移和下移。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("单击卡片查看全文，双击复制并显示成功提示；窗口保持打开，方向键可选择内容，编辑可从右侧或右键菜单进入。")
+                    Text("默认以卡片网格浏览，单击从右侧打开编辑面板，双击复制。再次点击当前卡片、点击网格空白处、按 Esc 或面板左上角按钮收起；离开输入框和收起面板时自动保存。剪贴板原文只读，可先保存为片段再编辑。")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             } header: { Text("浏览与复制") }
             CabinetSettingsSection {
@@ -189,7 +196,7 @@ struct CabinetSettingsPage<Content: View>: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) { content }
-                .frame(maxWidth: .infinity, alignment: .leading).padding(26)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(CabinetGrid.detailInset)
         }
         .font(.system(size: 12)).controlSize(.regular)
         .buttonStyle(.bordered)
