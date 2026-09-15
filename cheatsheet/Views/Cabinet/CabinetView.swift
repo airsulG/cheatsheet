@@ -4,9 +4,11 @@ import SwiftUI
 
 struct CabinetView: View {
     @ObservedObject var model: CabinetViewModel
+    var onCardClick: ((NSManagedObjectID) -> Void)?
     @AppStorage("cabinetAppearance") private var appearance = "dark"
     @State private var collapsed: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "cabinetCollapsedGroups") ?? [])
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var palette: CabinetPalette { CabinetPalette(dark: appearance == "dark") }
 
@@ -22,10 +24,27 @@ struct CabinetView: View {
         VStack(spacing: 0) {
             toolbar
             Divider()
-            HSplitView {
-                sidebar.frame(minWidth: 162, idealWidth: 188, maxWidth: 245)
-                results.frame(minWidth: 224, idealWidth: 304, maxWidth: 410)
-                detail.frame(minWidth: 310, maxWidth: .infinity)
+            HStack(spacing: 0) {
+                sidebar.frame(width: 188)
+                Divider()
+                GeometryReader { geometry in
+                    ZStack(alignment: .trailing) {
+                        results
+                        if model.isDetailPresented {
+                            detail.frame(width: min(460, max(340, geometry.size.width * 0.5)))
+                                .background(palette.reader)
+                                .overlay(alignment: .leading) { Divider() }
+                                .shadow(color: .black.opacity(0.16), radius: 16, x: -6)
+                                .transition(reduceMotion ? .opacity : .move(edge: .trailing))
+                                .zIndex(1)
+                        }
+                    }.clipped()
+                        .animation(model.detailUsesMotion ? .timingCurve(0.23, 1, 0.32, 1, duration: 0.2) : nil,
+                                   value: model.isDetailPresented)
+                        .onChange(of: geometry.size.width, initial: true) { _, width in
+                            model.gridColumnCount = max(1, Int((width - 48 + 12) / (210 + 12)))
+                        }
+                }
             }
         }
         .padding(.top, 28)
@@ -248,11 +267,11 @@ struct CabinetView: View {
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(spacing: 8) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 12)], spacing: 12) {
                             ForEach(model.items) { item in
                                 resultRow(item).id(item.id)
                             }
-                        }.padding(8)
+                        }.padding(CabinetGrid.detailInset)
                     }
                     .onChange(of: model.selectionScrollRequest) { _, _ in
                         if let id = model.selection { proxy.scrollTo(id) }
@@ -261,8 +280,9 @@ struct CabinetView: View {
             }
             Divider()
             HStack {
-                Text("↑ ↓  选择   ·   ↵  复制并收起")
+                Text("单击编辑 · 双击复制")
                 Spacer()
+                Text("方向键选择 · ↵ 复制并收起")
             }.font(.system(size: 10)).foregroundStyle(.secondary)
                 .padding(.horizontal, CabinetGrid.detailInset).frame(height: CabinetGrid.footerHeight)
         }.background(palette.list)
@@ -274,33 +294,35 @@ struct CabinetView: View {
         let rowHelp: String
         if case .snippet = item { rowHelp = "单击片段直接编辑，双击复制" }
         else { rowHelp = "单击查看原文，双击复制" }
-        return Button { model.select(item.id, focusEditor: true) } label: {
-            VStack(alignment: .leading, spacing: 10) {
+        return Button {
+            if let onCardClick { onCardClick(item.id) }
+            else { model.openDetail(item.id, animated: true) }
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
                 if let data = item.image, let image = NSImage(data: data) {
-                    Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: 145)
+                    Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity).frame(height: 88)
                         .padding(6).background(palette.input, in: RoundedRectangle(cornerRadius: 4))
                 }
                 Text(preview.title).font(.system(size: 13, weight: preview.isDerivedTitle ? .regular : .medium))
                     .lineLimit(2).lineSpacing(5)
                 if !preview.excerpt.isEmpty {
                     Text(preview.excerpt).font(.system(size: 11, design: preview.isMonospaced ? .monospaced : .default))
-                        .foregroundStyle(.secondary).lineLimit(3).lineSpacing(4)
+                        .foregroundStyle(.secondary).lineLimit(item.image == nil ? 4 : 1).lineSpacing(4)
                 }
+                Spacer(minLength: 0)
                 if !tags.isEmpty {
-                    CabinetTagFlow(spacing: 4) {
-                        ForEach(tags) { tag in CabinetTagLabel(name: tag.name ?? "") }
+                    HStack(spacing: 4) {
+                        ForEach(Array(tags.prefix(2))) { tag in CabinetTagLabel(name: tag.name ?? "").lineLimit(1) }
+                        if tags.count > 2 { Text("+\(tags.count - 2)").font(.system(size: 10)).foregroundStyle(.secondary) }
                     }
                 }
                 if case .history(let record) = item {
                     CabinetClipboardSource(record: record)
                 }
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(16).frame(height: 232)
                 .contentShape(Rectangle())
         }.buttonStyle(.plain).help(rowHelp)
             .accessibilityLabel("片段：\(preview.title)")
-            .simultaneousGesture(TapGesture(count: 2).onEnded {
-                if model.select(item.id) { model.copy(close: false) }
-            })
             .background(model.selection == item.id ? palette.selection : palette.reader.opacity(0.44), in: RoundedRectangle(cornerRadius: 7))
             .overlay {
                 RoundedRectangle(cornerRadius: 7)
@@ -365,6 +387,8 @@ struct CabinetView: View {
         VStack(spacing: 0) {
             HStack {
                 Text(model.location == .clipboard ? "剪贴板原文" : "片段").foregroundStyle(.secondary)
+                Button { model.closeDetail(animated: true) } label: { Image(systemName: "sidebar.right") }
+                    .help("收起面板（Esc）").accessibilityLabel("收起编辑面板")
                 Spacer()
                 if case .snippet(let c) = item {
                     if c.originID != nil { Button("返回剪贴板") { model.navigate(.clipboard) } }

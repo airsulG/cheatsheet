@@ -48,6 +48,9 @@ final class CabinetViewModel: ObservableObject {
     @Published var deleted: [NSManagedObject] = []
     @Published var selection: NSManagedObjectID?
     @Published var selectionScrollRequest = 0
+    @Published private(set) var isDetailPresented = false
+    var detailUsesMotion = false
+    var gridColumnCount = 1
     @Published var draft: CabinetDraft?
     @Published private(set) var editorSession = UUID()
     @Published private(set) var editorFocusRequest = 0
@@ -210,6 +213,7 @@ final class CabinetViewModel: ObservableObject {
         guard target != location else { return true }
         guard allowLeaving() else { return false }
         contexts[location] = (query, selection)
+        detailUsesMotion = false; isDetailPresented = false
         draft = nil; originalDraft = nil; pinnedDraftID = nil
         location = target
         query = contexts[target]?.0 ?? ""
@@ -221,6 +225,7 @@ final class CabinetViewModel: ObservableObject {
     func search(_ text: String) {
         guard text != query else { return }
         guard !dirty || allowLeaving() else { return }
+        detailUsesMotion = false; isDetailPresented = false
         draft = nil; originalDraft = nil; pinnedDraftID = nil; query = text; refreshItems()
     }
     @discardableResult
@@ -249,11 +254,34 @@ final class CabinetViewModel: ObservableObject {
         if location == .clipboard || location == .trash { navigate(.all) }
         selection = nil; pinnedDraftID = nil
         draft = value; originalDraft = value
+        detailUsesMotion = false; isDetailPresented = true
         editorSession = UUID(); saveStatus = ""; editorFocusRequest += 1
     }
     func edit() {
         synchronizeEditor()
+        detailUsesMotion = false; isDetailPresented = true
         editorFocusRequest += 1
+    }
+    @discardableResult
+    func openDetail(_ id: NSManagedObjectID, animated: Bool = false) -> Bool {
+        guard select(id) else { return false }
+        detailUsesMotion = animated; isDetailPresented = true
+        editorFocusRequest += 1
+        return true
+    }
+    @discardableResult
+    func closeDetail(animated: Bool = false) -> Bool {
+        guard allowLeaving() else { return false }
+        detailUsesMotion = animated; isDetailPresented = false
+        draft = nil; originalDraft = nil; pinnedDraftID = nil
+        editorSession = UUID()
+        refreshItems()
+        focusSearch?()
+        return true
+    }
+    func escape() {
+        if isDetailPresented { closeDetail() }
+        else { requestClose() }
     }
     private func synchronizeEditor() {
         // 后台刷新不能替换正在输入的内容，也不能给空白新片段填入旧片段。
@@ -330,7 +358,9 @@ final class CabinetViewModel: ObservableObject {
             query = ""; selection = item.objectID; reload(); edit()
         }
     }
-    func requestClose() { if allowLeaving() { closeWindow?() } }
+    func requestClose() {
+        if allowLeaving() { detailUsesMotion = false; isDetailPresented = false; closeWindow?() }
+    }
     func deleteHistory(_ history: ClipboardItem) {
         let alert = NSAlert()
         alert.messageText = "删除这条剪贴板记录？"

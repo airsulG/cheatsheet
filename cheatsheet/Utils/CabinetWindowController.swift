@@ -15,6 +15,7 @@ final class CabinetWindowController: NSObject, NSWindowDelegate {
     private var model: CabinetViewModel?
     private var previousApp: NSRunningApplication?
     private var keyMonitor: Any?
+    private var cardMouseMonitor: Any?
 
     func toggle() {
         if panel?.isKeyWindow == true && NSApp.isActive && panel?.isMiniaturized == false { model?.requestClose() }
@@ -67,7 +68,10 @@ final class CabinetWindowController: NSObject, NSWindowDelegate {
         panel.hasShadow = true
         panel.isMovableByWindowBackground = true
         panel.minSize = NSSize(width: 760, height: 560)
-        let hosting = NSHostingController(rootView: CabinetView(model: model))
+        let cardInteraction = CabinetCardInteraction(model: model)
+        let hosting = NSHostingController(rootView: CabinetView(model: model, onCardClick: { id in
+            cardInteraction.activate(id, event: NSApp.currentEvent)
+        }))
         hosting.safeAreaRegions = []
         hosting.sizingOptions = [.minSize]
         panel.contentViewController = hosting
@@ -80,8 +84,12 @@ final class CabinetWindowController: NSObject, NSWindowDelegate {
         panel.center()
         panel.delegate = self
         model.closeWindow = { [weak self] in self?.hide() }
-        panel.onCancel = { [weak model] in model?.requestClose() }
+        panel.onCancel = { [weak model] in model?.escape() }
         self.panel = panel
+        cardMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak panel] event in
+            guard event.window === panel, NSApp.modalWindow == nil else { return event }
+            return cardInteraction.handle(event) ? nil : event
+        }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak panel] event in
             guard panel?.isKeyWindow == true, NSApp.modalWindow == nil,
                   RunLoop.current.currentMode != .eventTracking else { return event }
@@ -97,12 +105,14 @@ final class CabinetWindowController: NSObject, NSWindowDelegate {
                 default: break
                 }
             } else if event.keyCode == 53 {
-                model.requestClose()
+                model.escape()
                 return nil
             } else if model.searchHasFocus || !(panel?.firstResponder is NSTextView) {
                 switch event.keyCode {
-                case 125: model.moveSelection(1); return nil
-                case 126: model.moveSelection(-1); return nil
+                case 125: model.moveSelection(model.gridColumnCount); return nil
+                case 126: model.moveSelection(-model.gridColumnCount); return nil
+                case 123: if !model.searchHasFocus { model.moveSelection(-1); return nil }
+                case 124: if !model.searchHasFocus { model.moveSelection(1); return nil }
                 case 36: model.copy(close: true); return nil
                 default: break
                 }

@@ -105,6 +105,8 @@ struct CabinetEditor: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
+                Button { model.closeDetail(animated: true) } label: { Image(systemName: "sidebar.right") }
+                    .buttonStyle(.borderless).help("收起面板（Esc）").accessibilityLabel("收起编辑面板")
                 Text(model.draft?.commandID == nil ? "新建片段" : "片段")
                 if let id = model.draft?.commandID,
                    let command = try? model.context.existingObject(with: id) as? Command {

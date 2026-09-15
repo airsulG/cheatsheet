@@ -182,6 +182,7 @@ struct CabinetChecks {
         precondition(CabinetSourceIcon.image(data: nil, bundleID: "missing.app") == nil)
         print("PASS: clipboard source icon uses saved data, falls back to installed app, and tolerates missing apps")
         try await checkRefresh(container: container(model))
+        try checkGridInteraction(container: container(model))
         let failureContext = RejectingSaveContext(concurrencyType: .mainQueueConcurrencyType)
         failureContext.persistentStoreCoordinator = container(model).persistentStoreCoordinator
         let failureStore = CabinetStore(context: failureContext)
@@ -230,6 +231,56 @@ struct CabinetChecks {
         _ = view.resignFirstResponder()
         precondition(!model.dirty && model.saveStatus == "已保存" && model.selected?.body == original + "设计")
         print("PASS: native editor excludes marked IME text, commits Chinese and saves through its real blur callback")
+    }
+
+    @MainActor static func checkGridInteraction(container: NSPersistentContainer) throws {
+        let store = CabinetStore(context: container.viewContext)
+        let first = try store.save(nil, title: "卡片 A", body: "第一张的完整正文", tags: [])
+        let second = try store.save(nil, title: "卡片 B", body: "第二张的完整正文", tags: [])
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let vm = CabinetViewModel(context: container.viewContext, pasteboard: board)
+        precondition(!vm.isDetailPresented, "Initial browsing must not mount an editor")
+        precondition(vm.openDetail(first.objectID) && vm.isDetailPresented)
+        vm.draft?.body = "收起前保存的中文 👩🏽‍💻"
+        precondition(vm.closeDetail() && !vm.isDetailPresented && first.content == "收起前保存的中文 👩🏽‍💻")
+        vm.openDetail(first.objectID)
+        vm.draft?.body = ""
+        precondition(!vm.closeDetail() && vm.isDetailPresented && vm.dirty, "Failed save must keep the panel open")
+        vm.draft?.body = "修正后保存"
+        vm.search("卡片")
+        precondition(!vm.isDetailPresented && first.content == "修正后保存")
+        vm.openDetail(first.objectID)
+        vm.navigate(.favorites)
+        precondition(!vm.isDetailPresented)
+        vm.navigate(.all)
+        vm.search("")
+
+        let clicks = CabinetCardInteraction(model: vm)
+        func mouse(_ type: NSEvent.EventType, _ count: Int, _ time: TimeInterval, x: CGFloat = 800) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: NSPoint(x: x, y: 400), modifierFlags: [], timestamp: time,
+                              windowNumber: 0, context: nil, eventNumber: 0, clickCount: count, pressure: 1)!
+        }
+        clicks.activate(first.objectID, event: mouse(.leftMouseUp, 1, 1))
+        precondition(vm.isDetailPresented, "Single click must open immediately without a double-click timer")
+        precondition(clicks.handle(mouse(.leftMouseDown, 2, 1 + NSEvent.doubleClickInterval / 2)))
+        precondition(board.string(forType: .string) == first.content && !vm.isDetailPresented,
+                     "Second click over the new panel must copy the original card and return to the grid")
+        precondition(clicks.handle(mouse(.leftMouseUp, 2, 1 + NSEvent.doubleClickInterval / 2)))
+        vm.openDetail(first.objectID)
+        clicks.activate(second.objectID, event: mouse(.leftMouseUp, 1, 3))
+        precondition(clicks.handle(mouse(.leftMouseDown, 2, 3 + NSEvent.doubleClickInterval / 2)))
+        precondition(board.string(forType: .string) == second.content && vm.isDetailPresented,
+                     "Copying another visible card must preserve an already open panel")
+        _ = clicks.handle(mouse(.leftMouseUp, 2, 3 + NSEvent.doubleClickInterval / 2))
+        clicks.activate(first.objectID, event: mouse(.leftMouseUp, 1, 5))
+        precondition(!clicks.handle(mouse(.leftMouseDown, 2, 5 + NSEvent.doubleClickInterval / 2, x: 100)))
+        precondition(!clicks.handle(mouse(.leftMouseDown, 2, 6 + NSEvent.doubleClickInterval)))
+        vm.newSnippet()
+        precondition(vm.isDetailPresented && vm.draft?.commandID == nil)
+        vm.escape()
+        precondition(!vm.isDetailPresented && vm.snippetCount == 2)
+        print("PASS: grid default, immediate drawer open, close/save/failure recovery, navigation/search dismissal, double-click source routing, pointer/time boundaries and blank-new dismissal")
     }
 
     @MainActor static func checkReader(itemID: NSManagedObjectID, otherID: NSManagedObjectID) {
