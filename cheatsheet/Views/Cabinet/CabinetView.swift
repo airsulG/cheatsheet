@@ -180,8 +180,8 @@ struct CabinetView: View {
         Button { model.navigate(target) } label: {
             HStack(spacing: SidebarGrid.gap) {
                 Image(systemName: icon).frame(width: SidebarGrid.icon).foregroundStyle(.secondary)
-                Text(title).font(.system(size: 12, weight: .medium))
-                Spacer()
+                Text(title).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                Spacer(minLength: 0)
                 Text("\(count)").font(.system(size: 10).monospacedDigit()).foregroundStyle(.secondary)
                     .frame(width: SidebarGrid.accessory)
             }.padding(.horizontal, SidebarGrid.inset).frame(height: 36)
