@@ -195,6 +195,14 @@ struct CabinetChecks {
         precondition(intact.content == "磁盘写入失败前的正文", "A failed save must restore the managed object's prior fields")
         failureContext.rejectSave = false
         precondition(failingVM.autosave() && intact.content == "必须留在草稿中的修改")
+        let favoriteBefore = intact.isFavorite
+        let favoriteDate = intact.updatedAt
+        failureContext.rejectSave = true
+        precondition(!failingVM.toggleFavorite(intact) && intact.isFavorite == favoriteBefore && intact.updatedAt == favoriteDate)
+        failureContext.rejectSave = false
+        for _ in 0..<10 { precondition(failingVM.toggleFavorite(intact)) }
+        precondition(intact.isFavorite == favoriteBefore)
+        print("PASS: favorite failure restores state and timestamp; ten rapid toggles persist the final state")
         print("PASS: simulated disk save failure preserves draft, restores the record and supports retry")
         try await checkEditableText(model: failingVM)
         vm.search("")

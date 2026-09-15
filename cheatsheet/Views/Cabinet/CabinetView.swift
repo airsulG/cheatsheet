@@ -42,7 +42,7 @@ struct CabinetView: View {
                                 .zIndex(1)
                         }
                     }.clipped()
-                        .animation(model.detailUsesMotion ? .timingCurve(0.23, 1, 0.32, 1, duration: 0.2) : nil,
+                        .animation(model.detailUsesMotion ? CabinetMotion.settle(0.2) : nil,
                                    value: model.isDetailPresented)
                         .onChange(of: geometry.size.width, initial: true) { _, width in
                             model.gridColumnCount = max(1, Int((width - 48 + 12) / (210 + 12)))
@@ -59,16 +59,7 @@ struct CabinetView: View {
         .accentColor(palette.accent)
         .frame(minWidth: 740, minHeight: 520)
         .overlay(alignment: .top) {
-            if let message = model.toastMessage {
-                Label(message, systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 13, weight: .medium)).foregroundStyle(palette.accent)
-                    .padding(.horizontal, 16).padding(.vertical, 11)
-                    .background(palette.reader, in: Capsule())
-                    .overlay(Capsule().stroke(palette.accent.opacity(0.5), lineWidth: 1))
-                    .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
-                    .padding(.top, 84).allowsHitTesting(false)
-                    .accessibilityLabel(message)
-            }
+            CabinetToast(message: model.toastMessage, palette: palette).padding(.top, 84)
         }
         .onChange(of: collapsed) { _, value in UserDefaults.standard.set(Array(value), forKey: "cabinetCollapsedGroups") }
         .alert("未能完成操作", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
@@ -194,7 +185,10 @@ struct CabinetView: View {
                 Text("\(count)").font(.system(size: 10).monospacedDigit()).foregroundStyle(.secondary)
                     .frame(width: SidebarGrid.accessory)
             }.padding(.horizontal, SidebarGrid.inset).frame(height: 36)
-                .background(model.location == target ? palette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                .background {
+                    RoundedRectangle(cornerRadius: 6).fill(model.location == target ? palette.selection : .clear)
+                        .animation(CabinetMotion.hover, value: model.location == target)
+                }
                 .contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
@@ -216,7 +210,10 @@ struct CabinetView: View {
                 }.padding(.horizontal, SidebarGrid.inset).frame(height: 30).contentShape(Rectangle())
             }.buttonStyle(.plain)
         }.font(.system(size: 13))
-            .background(model.location == .tag(tag.objectID) ? palette.selection : .clear, in: RoundedRectangle(cornerRadius: 5))
+            .background {
+                RoundedRectangle(cornerRadius: 5).fill(model.location == .tag(tag.objectID) ? palette.selection : .clear)
+                    .animation(CabinetMotion.hover, value: model.location == .tag(tag.objectID))
+            }
             .contextMenu { tagMenu(tag) }
     }
 
@@ -333,14 +330,8 @@ struct CabinetView: View {
                 }
             }.frame(maxWidth: .infinity, alignment: .leading).padding(14).frame(height: 200)
                 .contentShape(Rectangle())
-        }.buttonStyle(.plain).help(rowHelp)
+        }.buttonStyle(CabinetCardStyle(selected: model.selection == item.id, palette: palette)).help(rowHelp)
             .accessibilityLabel("片段：\(preview.title)")
-            .background(model.selection == item.id ? palette.selection : palette.reader.opacity(0.44), in: RoundedRectangle(cornerRadius: 7))
-            .overlay {
-                RoundedRectangle(cornerRadius: 7)
-                    .strokeBorder(model.selection == item.id ? Color.accentColor.opacity(0.48) : Color.primary.opacity(0.12), lineWidth: 1)
-                    .allowsHitTesting(false)
-            }
             .contextMenu {
                 Button("复制") { if model.select(item.id) { model.copy(close: false) } }
                 Button("复制并收起") { if model.select(item.id) { model.copy(close: true) } }
@@ -349,7 +340,7 @@ struct CabinetView: View {
                         Button("返回剪贴板") { model.navigate(.clipboard) }
                     }
                     Button("编辑") { if model.select(item.id) { model.edit() } }
-                    Button(c.isFavorite ? "取消常用" : "设为常用") { model.perform { c.toggleFavorite(); try model.context.save() } }
+                    Button(c.isFavorite ? "取消常用" : "设为常用") { model.toggleFavorite(c) }
                     Button("上移") { model.move(item, offset: -1) }
                     Button("下移") { model.move(item, offset: 1) }
                     Button("移到最近删除", role: .destructive) {
@@ -404,9 +395,7 @@ struct CabinetView: View {
                 Spacer()
                 if case .snippet(let c) = item {
                     if c.originID != nil { Button("返回剪贴板") { model.navigate(.clipboard) } }
-                    Button { model.perform { c.toggleFavorite(); try model.context.save() } } label: {
-                        Image(systemName: c.isFavorite ? "star.fill" : "star")
-                    }.help(c.isFavorite ? "取消常用" : "设为常用")
+                    CabinetFavoriteButton(command: c, model: model)
                     Button("编辑") { model.edit() }
                 } else {
                     Button(model.collectionLabel) { model.collect() }

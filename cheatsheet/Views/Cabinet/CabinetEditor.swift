@@ -110,10 +110,7 @@ struct CabinetEditor: View {
                 Text(model.draft?.commandID == nil ? "新建片段" : "片段")
                 if let id = model.draft?.commandID,
                    let command = try? model.context.existingObject(with: id) as? Command {
-                    Button {
-                        model.perform { command.toggleFavorite(); try model.context.save() }
-                    } label: { Image(systemName: command.isFavorite ? "star.fill" : "star") }
-                        .buttonStyle(.borderless).help(command.isFavorite ? "取消常用" : "设为常用")
+                    CabinetFavoriteButton(command: command, model: model)
                 }
                 Spacer()
                 if let id = model.draft?.commandID,

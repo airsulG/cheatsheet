@@ -411,4 +411,20 @@ final class CabinetViewModel: ObservableObject {
     func perform(_ action: () throws -> Void) {
         do { try action() } catch { self.error = error.localizedDescription }
     }
+    @discardableResult
+    func toggleFavorite(_ command: Command) -> Bool {
+        guard allowLeaving() else { return false }
+        let previous = command.isFavorite
+        let timestamp = command.updatedAt
+        do {
+            command.toggleFavorite()
+            try context.save()
+            return true
+        } catch {
+            command.isFavorite = previous
+            command.updatedAt = timestamp
+            self.error = error.localizedDescription
+            return false
+        }
+    }
 }
