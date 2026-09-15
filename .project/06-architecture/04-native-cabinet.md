@@ -47,3 +47,9 @@ CabinetViewModel.reload 在初始化、数据变更和窗口重新显示时重�
 CabinetEditableTextView.resignFirstResponder 和 textDidEndEditing 提交已上屏文字；hasMarkedText 时不把拼音组合写入草稿。标题焦点、标签选择结束、图片修改以及窗口失焦接入同一个 autosave。导航、关闭、复制和移到最近删除先调用 allowLeaving，自动保存失败则停留。save 保留草稿并更新 originalDraft，既保留撤销栈也避免无变化重复写；查询不被清空，pinnedDraftID 暂时保留刚保存但不再匹配筛选的编辑对象，到下一次导航/搜索/选择时解除。CabinetStore.save 失败只恢复本次修改的字段，避免其他操作误存失败内容，不调用整个 context.rollback。
 
 CabinetGrid 统一 24pt 内容边距、52pt 标题区和 64pt 底部操作区。NSTextView 的 lineFragmentPadding 为 0，程序加载的正文也应用 7pt 行距；搜索使用临时高亮属性，不把样式写入片段。切换编辑会话重置撤销和选区；查询匹配定位后将插入点放在匹配开头，清空查询回到顶部。详见 [行为与页面验收](../04-artifacts/verification/9/auto-edit.md)。
+
+## 网格与按需编辑面板
+
+同日最新布局以 188pt 导航栏加自适应 LazyVGrid 替代常驻三栏。卡片最小宽度 210pt、间距 12pt、等高 232pt，标题、摘要和标签分层排列；图片在固定预览槽内按比例缩放。isDetailPresented 独立于 selection，默认不创建编辑面板；打开后以 340–460pt 宽度覆盖右侧，网格不重排。搜索、导航和关闭窗口收起面板，收起前复用 allowLeaving 保存并保留失败草稿。方向键上下按实际网格列数移动，搜索中的左右键保留文字光标行为。
+
+CabinetCardInteraction 保存首击对象 ID、窗口坐标、时间及导航上下文。窗口内第二次原生鼠标按下满足系统双击时间和位置边界时，仍复制首击对象，即使面板已覆盖该位置；消费对应 mouseUp，防止事件落入编辑器。它不通过等待双击计时器延迟首次展开。鼠标展开采用 200ms ease-out 位移，键盘不加动画，系统减少动态效果时改为透明度过渡。验收与安装证据见 [网格记录](../04-artifacts/verification/9/grid.md)。
