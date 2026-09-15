@@ -135,8 +135,15 @@ extension Command {
 
 enum CabinetContent {
     static func title(_ text: String, image: Bool = false) -> String {
-        text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
-            .first(where: { !$0.isEmpty }) ?? (image ? "图片" : "未命名片段")
+        var start = text.startIndex
+        while start < text.endIndex {
+            let end = text[start...].firstIndex(where: \.isNewline) ?? text.endIndex
+            let line = text[start..<end].trimmingCharacters(in: .whitespaces)
+            if !line.isEmpty { return line }
+            guard end < text.endIndex else { break }
+            start = text.index(after: end)
+        }
+        return image ? "图片" : "未命名片段"
     }
     static func isMonospaced(_ text: String) -> Bool {
         text.hasPrefix("/") || text.hasPrefix("~/") || text.hasPrefix("git ") ||

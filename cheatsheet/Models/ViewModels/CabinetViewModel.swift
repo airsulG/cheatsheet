@@ -66,6 +66,7 @@ final class CabinetViewModel: ObservableObject {
     private var observer: NSObjectProtocol?
     private var refreshScheduled = false
     private let pasteboard: NSPasteboard
+    private var rowPreviews: [NSManagedObjectID: (query: String, preview: CabinetRowPreview)] = [:]
 
     init(context: NSManagedObjectContext, pasteboard: NSPasteboard = .general) {
         self.context = context
@@ -91,6 +92,13 @@ final class CabinetViewModel: ObservableObject {
     }
 
     var selected: CabinetItem? { items.first { $0.id == selection } }
+    func rowPreview(for item: CabinetItem) -> CabinetRowPreview {
+        if let cached = rowPreviews[item.id], cached.query == query { return cached.preview }
+        let preview = CabinetRowPreview(item: item, query: query)
+        if rowPreviews.count >= 256 { rowPreviews.removeAll(keepingCapacity: true) }
+        rowPreviews[item.id] = (query, preview)
+        return preview
+    }
     var collectionLabel: String {
         guard case .history(let history) = selected, let id = history.id else { return "保存为片段" }
         let request: NSFetchRequest<Command> = Command.fetchRequest()
@@ -109,6 +117,7 @@ final class CabinetViewModel: ObservableObject {
     }
 
     func reload() {
+        rowPreviews.removeAll(keepingCapacity: true)
         perform {
             let tr: NSFetchRequest<Category> = Category.fetchRequest()
             tr.sortDescriptors = [NSSortDescriptor(key: "order", ascending: true), NSSortDescriptor(key: "name", ascending: true)]

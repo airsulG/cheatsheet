@@ -268,21 +268,23 @@ struct CabinetView: View {
     }
 
     private func resultRow(_ item: CabinetItem) -> some View {
-        Button { model.select(item.id) } label: {
+        let preview = model.rowPreview(for: item)
+        let tags = item.tags
+        return Button { model.select(item.id) } label: {
             VStack(alignment: .leading, spacing: 10) {
                 if let data = item.image, let image = NSImage(data: data) {
                     Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: 145)
                         .padding(6).background(palette.input, in: RoundedRectangle(cornerRadius: 4))
                 }
-                Text(item.title).font(.system(size: 13, weight: item.title == CabinetContent.title(item.body) ? .regular : .medium))
+                Text(preview.title).font(.system(size: 13, weight: preview.isDerivedTitle ? .regular : .medium))
                     .lineLimit(2).lineSpacing(5)
-                if !item.body.isEmpty && item.body != item.title {
-                    Text(excerpt(item)).font(.system(size: 11, design: CabinetContent.isMonospaced(item.body) ? .monospaced : .default))
+                if !preview.excerpt.isEmpty {
+                    Text(preview.excerpt).font(.system(size: 11, design: preview.isMonospaced ? .monospaced : .default))
                         .foregroundStyle(.secondary).lineLimit(3).lineSpacing(4)
                 }
-                if !item.tags.isEmpty {
+                if !tags.isEmpty {
                     CabinetTagFlow(spacing: 4) {
-                        ForEach(item.tags) { tag in CabinetTagLabel(name: tag.name ?? "") }
+                        ForEach(tags) { tag in CabinetTagLabel(name: tag.name ?? "") }
                     }
                 }
                 if case .history(let record) = item {
@@ -291,7 +293,7 @@ struct CabinetView: View {
             }.frame(maxWidth: .infinity, alignment: .leading).padding(14)
                 .contentShape(Rectangle())
         }.buttonStyle(.plain).help("单击查看，双击复制")
-            .accessibilityLabel("片段：\(item.title)")
+            .accessibilityLabel("片段：\(preview.title)")
             .simultaneousGesture(TapGesture(count: 2).onEnded {
                 if model.select(item.id) { model.copy(close: false) }
             })
@@ -318,18 +320,6 @@ struct CabinetView: View {
                 }
             }
     }
-    private func excerpt(_ item: CabinetItem) -> String {
-        if !model.query.isEmpty, let range = item.body.range(of: model.query, options: [.caseInsensitive, .diacriticInsensitive]) {
-            let start = item.body.index(range.lowerBound, offsetBy: -25, limitedBy: item.body.startIndex) ?? item.body.startIndex
-            return (start == item.body.startIndex ? "" : "…") + String(item.body[start...].prefix(240))
-        }
-        if case .snippet(let command) = item, (command.name ?? "").isEmpty,
-           let newline = item.body.firstIndex(of: "\n") {
-            return String(item.body[item.body.index(after: newline)...].trimmingCharacters(in: .whitespacesAndNewlines).prefix(240))
-        }
-        return String(item.body.prefix(240))
-    }
-
     private var trashList: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 15) {
