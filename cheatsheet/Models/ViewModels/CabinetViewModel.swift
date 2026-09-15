@@ -58,7 +58,8 @@ final class CabinetViewModel: ObservableObject {
     @Published var error: String?
     @Published var feedback = ""
     @Published var copiedItemID: NSManagedObjectID?
-    private var copyFeedbackTask: Task<Void, Never>?
+    @Published private(set) var toastMessage: String?
+    private var toastTask: Task<Void, Never>?
     @Published var clipboardCount = 0
     @Published var snippetCount = 0
     @Published var favoriteCount = 0
@@ -324,9 +325,14 @@ final class CabinetViewModel: ObservableObject {
             selection = saved.objectID; pinnedDraftID = saved.objectID
             saveStatus = "已保存"; error = nil
             reload()
+            showToast("已保存")
             // 通知刷新列表；不清空搜索，也不让失焦保存改变当前位置。
             return true
-        } catch { saveStatus = "保存失败，内容已保留"; self.error = error.localizedDescription; return false }
+        } catch {
+            clearToast()
+            saveStatus = "保存失败，内容已保留"; self.error = error.localizedDescription
+            return false
+        }
     }
     func cancelEdit() {
         guard allowLeaving() else { return }
@@ -343,17 +349,25 @@ final class CabinetViewModel: ObservableObject {
             success = pasteboard.writeObjects([image])
             if !item.body.isEmpty { _ = pasteboard.setString(item.body, forType: .string) }
         } else { success = pasteboard.setString(item.body, forType: .string) }
-        guard success else { error = "复制失败，请重试"; return }
-        feedback = "已复制"
-        copiedItemID = item.id
-        copyFeedbackTask?.cancel()
-        copyFeedbackTask = Task { @MainActor [weak self] in
+        guard success else { clearToast(); error = "复制失败，请重试"; return }
+        showToast("已复制到剪贴板", copiedID: item.id)
+        if close { closeWindow?() }
+    }
+    private func showToast(_ message: String, copiedID: NSManagedObjectID? = nil) {
+        toastTask?.cancel()
+        toastMessage = message
+        copiedItemID = copiedID
+        feedback = copiedID == nil ? "" : "已复制"
+        toastTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled else { return }
-            self?.copiedItemID = nil
-            if self?.feedback == "已复制" { self?.feedback = "" }
+            self?.clearToast()
         }
-        if close { closeWindow?() }
+    }
+    private func clearToast() {
+        toastTask?.cancel()
+        toastTask = nil
+        toastMessage = nil; copiedItemID = nil; feedback = ""
     }
     func collect() {
         guard case .history(let source) = selected else { return }

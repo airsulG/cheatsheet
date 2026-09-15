@@ -183,6 +183,7 @@ struct CabinetChecks {
         print("PASS: clipboard source icon uses saved data, falls back to installed app, and tolerates missing apps")
         try await checkRefresh(container: container(model))
         try checkGridInteraction(container: container(model))
+        try await checkSaveToast(container: container(model))
         let failureContext = RejectingSaveContext(concurrencyType: .mainQueueConcurrencyType)
         failureContext.persistentStoreCoordinator = container(model).persistentStoreCoordinator
         let failureStore = CabinetStore(context: failureContext)
@@ -231,6 +232,41 @@ struct CabinetChecks {
         _ = view.resignFirstResponder()
         precondition(!model.dirty && model.saveStatus == "已保存" && model.selected?.body == original + "设计")
         print("PASS: native editor excludes marked IME text, commits Chinese and saves through its real blur callback")
+    }
+
+    @MainActor static func checkSaveToast(container: NSPersistentContainer) async throws {
+        let store = CabinetStore(context: container.viewContext)
+        let record = try store.save(nil, title: "反馈验证", body: "保存前", tags: [])
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let vm = CabinetViewModel(context: container.viewContext, pasteboard: board)
+        var messages: [String] = []
+        let observation = vm.$toastMessage.compactMap { $0 }.sink { messages.append($0) }
+        defer { observation.cancel() }
+        vm.openDetail(record.objectID)
+        precondition(vm.autosave() && vm.toastMessage == nil)
+        vm.draft?.body = "自动保存完成"
+        precondition(vm.autosave() && vm.toastMessage == "已保存" && messages == ["已保存"])
+        precondition(vm.autosave() && messages.count == 1, "No-op blur must not restart a success toast")
+        precondition(vm.closeDetail() && vm.toastMessage == "已保存", "Closing the panel must retain save feedback in the grid")
+        vm.openDetail(record.objectID)
+        vm.draft?.body = "复制前也要保存"
+        vm.copy(close: false)
+        precondition(vm.toastMessage == "已复制到剪贴板" && board.string(forType: .string) == record.content)
+        precondition(messages.suffix(2) == ["已保存", "已复制到剪贴板"], "Latest copy feedback supersedes save feedback")
+        vm.draft?.body = ""
+        precondition(!vm.autosave() && vm.toastMessage == nil && vm.dirty,
+                     "A failed save must clear old success feedback and retain the draft")
+        vm.draft?.body = "失败后重试成功"
+        precondition(vm.autosave() && vm.toastMessage == "已保存")
+        let deadline = Date().addingTimeInterval(3)
+        while vm.toastMessage != nil && Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        precondition(vm.toastMessage == nil && vm.copiedItemID == nil && vm.feedback.isEmpty,
+                     "Success feedback must dismiss automatically")
+        precondition(vm.autosave() && vm.toastMessage == nil)
+        vm.newSnippet()
+        precondition(vm.autosave() && vm.toastMessage == nil, "An empty new draft must not claim it was saved")
+        print("PASS: save toast, no-op/blank suppression, panel-close persistence, latest-copy precedence, failure clearing and timed dismissal")
     }
 
     @MainActor static func checkGridInteraction(container: NSPersistentContainer) throws {

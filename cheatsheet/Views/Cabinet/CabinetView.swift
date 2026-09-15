@@ -33,7 +33,10 @@ struct CabinetView: View {
                         if model.isDetailPresented {
                             detail.frame(width: min(460, max(340, geometry.size.width * 0.5)))
                                 .background(palette.reader)
-                                .overlay(alignment: .leading) { Divider() }
+                                .overlay(alignment: .leading) {
+                                    Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1)
+                                        .allowsHitTesting(false)
+                                }
                                 .shadow(color: .black.opacity(0.16), radius: 16, x: -6)
                                 .transition(reduceMotion ? .opacity : .move(edge: .trailing))
                                 .zIndex(1)
@@ -56,15 +59,15 @@ struct CabinetView: View {
         .accentColor(palette.accent)
         .frame(minWidth: 740, minHeight: 520)
         .overlay(alignment: .top) {
-            if model.copiedItemID != nil {
-                Label("已复制到剪贴板", systemImage: "checkmark.circle.fill")
+            if let message = model.toastMessage {
+                Label(message, systemImage: "checkmark.circle.fill")
                     .font(.system(size: 13, weight: .medium)).foregroundStyle(palette.accent)
                     .padding(.horizontal, 16).padding(.vertical, 11)
                     .background(palette.reader, in: Capsule())
                     .overlay(Capsule().stroke(palette.accent.opacity(0.5), lineWidth: 1))
                     .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
                     .padding(.top, 84).allowsHitTesting(false)
-                    .accessibilityLabel("已复制到剪贴板")
+                    .accessibilityLabel(message)
             }
         }
         .onChange(of: collapsed) { _, value in UserDefaults.standard.set(Array(value), forKey: "cabinetCollapsedGroups") }
