@@ -1,6 +1,7 @@
 import AppKit
 import CoreData
 import SwiftUI
+import Combine
 @testable import cheatsheet
 
 @main
@@ -180,6 +181,7 @@ struct CabinetChecks {
         precondition(CabinetSourceIcon.image(data: Data([0, 1]), bundleID: "com.apple.finder") != nil)
         precondition(CabinetSourceIcon.image(data: nil, bundleID: "missing.app") == nil)
         print("PASS: clipboard source icon uses saved data, falls back to installed app, and tolerates missing apps")
+        try await checkRefresh(container: container(model))
         let savedImageID = image.id
         context.reset()
         try upgraded.persistentStoreCoordinator.remove(upgraded.persistentStoreCoordinator.persistentStores[0])
@@ -232,5 +234,62 @@ struct CabinetChecks {
         precondition(unicodeMatches.count == 2)
         precondition(("👩🏽‍💻 Café\r\nCAFE" as NSString).substring(with: unicodeMatches[0]) == "Café")
         print("PASS: continuous reader preserves cross-line Unicode copy, tail-match highlight and visibility, reading position, wrapping and item reset")
+    }
+
+    @MainActor static func checkRefresh(container: NSPersistentContainer) async throws {
+        let context = container.viewContext
+        let store = CabinetStore(context: context)
+        let a = try store.createTag("标签 A")
+        let b = try store.createTag("标签 B")
+        let original = try store.save(nil, title: "", body: "原始首行\n正文", tags: [a])
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let vm = CabinetViewModel(context: context, pasteboard: board)
+        var catalogUpdates = 0
+        let subscription = vm.$tags.dropFirst().sink { _ in catalogUpdates += 1 }
+        vm.navigate(.tag(a.objectID))
+        vm.search("正文")
+        vm.navigate(.tag(b.objectID))
+        precondition(vm.items.isEmpty)
+        vm.navigate(.tag(a.objectID))
+        precondition(vm.query == "正文" && vm.selection == original.objectID)
+        precondition(catalogUpdates == 0, "Filtering and navigation must not reload the catalog")
+        withExtendedLifetime(subscription) {}
+        vm.search("")
+        precondition(vm.rowPreview(for: .snippet(original)).title == "原始首行")
+        _ = try store.save(original, title: "", body: "更新后的首行\n新正文", tags: [b])
+        original.isFavorite = true
+        try context.save()
+        try await Task.sleep(for: .milliseconds(150))
+        precondition(vm.items.isEmpty && vm.tagCounts[a.objectID] == nil && vm.tagCounts[b.objectID] == 1)
+        precondition(vm.favoriteCount == 1 && vm.rowPreview(for: .snippet(original)).title == "更新后的首行")
+        vm.navigate(.tag(b.objectID))
+        precondition(vm.items.count == 1)
+        try store.trash(original)
+        try await Task.sleep(for: .milliseconds(150))
+        precondition(vm.items.isEmpty && vm.snippetCount == 0 && vm.favoriteCount == 0)
+        try store.restore(original)
+        try await Task.sleep(for: .milliseconds(150))
+        precondition(vm.items.count == 1 && vm.snippetCount == 1)
+        try store.trash(b)
+        try await Task.sleep(for: .milliseconds(150))
+        precondition(vm.location == .all && vm.tags.count == 1 && vm.snippetCount == 1)
+        try store.restore(b)
+        try await Task.sleep(for: .milliseconds(150))
+        precondition(vm.tagCounts[b.objectID] == 1)
+        let tagID = a.objectID
+        let worker = container.newBackgroundContext()
+        try worker.performAndWait {
+            let target = try worker.existingObject(with: tagID) as! cheatsheet.Category
+            _ = try CabinetStore(context: worker).save(nil, title: "", body: "后台新增片段", tags: [target])
+        }
+        try await Task.sleep(for: .milliseconds(150))
+        vm.navigate(.tag(a.objectID))
+        precondition(vm.items.count == 1 && vm.items[0].body == "后台新增片段" && vm.snippetCount == 2)
+        vm.newSnippet()
+        vm.draft?.body = "正在编辑"
+        precondition(vm.navigate(.tag(a.objectID)) && vm.draft?.body == "正在编辑",
+                     "Clicking the current tag must keep the draft")
+        print("PASS: cached navigation preserves selection/query without catalog refresh; edit, retag, trash, restore and background insert refresh results and counts")
     }
 }

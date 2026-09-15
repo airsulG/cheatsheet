@@ -67,6 +67,8 @@ final class CabinetViewModel: ObservableObject {
     private var refreshScheduled = false
     private let pasteboard: NSPasteboard
     private var rowPreviews: [NSManagedObjectID: (query: String, preview: CabinetRowPreview)] = [:]
+    private var activeCommands: [Command] = []
+    private var commandsByTag: [NSManagedObjectID: [Command]] = [:]
 
     init(context: NSManagedObjectContext, pasteboard: NSPasteboard = .general) {
         self.context = context
@@ -128,22 +130,38 @@ final class CabinetViewModel: ObservableObject {
             let allGroups = try context.fetch(gr)
             groups = allGroups.filter { $0.deletedAt == nil }
             let cr: NSFetchRequest<Command> = Command.fetchRequest()
-            cr.fetchBatchSize = 80
+            cr.relationshipKeyPathsForPrefetching = ["tags"]
             let commands = try context.fetch(cr)
             let active = commands.filter { $0.deletedAt == nil }
-            snippetCount = active.count
-            favoriteCount = active.filter(\.isFavorite).count
-            tagCounts = [:]
+            activeCommands = active
+            var byTag: [NSManagedObjectID: [Command]] = [:]
             for command in active {
-                for tag in command.activeTags { tagCounts[tag.objectID, default: 0] += 1 }
+                for tag in command.tags as? Set<Category> ?? [] where tag.deletedAt == nil {
+                    byTag[tag.objectID, default: []].append(command)
+                }
             }
+            commandsByTag = byTag
+            let counts = byTag.mapValues(\.count)
+            if tagCounts != counts { tagCounts = counts }
+            if snippetCount != active.count { snippetCount = active.count }
+            let favorites = active.filter(\.isFavorite).count
+            if favoriteCount != favorites { favoriteCount = favorites }
             let hr: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
-            clipboardCount = try context.count(for: hr)
+            let historyCount = try context.count(for: hr)
+            if clipboardCount != historyCount { clipboardCount = historyCount }
             deleted = (allTags.filter { $0.deletedAt != nil } as [NSManagedObject]) +
                 (allGroups.filter { $0.deletedAt != nil } as [NSManagedObject]) +
                 (commands.filter { $0.deletedAt != nil } as [NSManagedObject])
             if case .tag(let id) = location, !tags.contains(where: { $0.objectID == id }) { location = .all }
+            refreshItems()
+        }
+    }
+
+    /// 导航、搜索和排序使用已加载的片段；只有数据变化或重新打开窗口才重建统计。
+    private func refreshItems() {
+        perform {
             if location == .clipboard {
+                let hr: NSFetchRequest<ClipboardItem> = ClipboardItem.fetchRequest()
                 hr.fetchBatchSize = 80
                 hr.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: false)]
                 let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -151,13 +169,12 @@ final class CabinetViewModel: ObservableObject {
                 items = try context.fetch(hr).map(CabinetItem.history)
             } else {
                 let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-                var result = active.filter { c in
-                    switch location {
-                    case .favorites: return c.isFavorite
-                    case .tag(let id): return c.activeTags.contains { $0.objectID == id }
-                    case .trash: return false
-                    default: return true
-                    }
+                var result: [Command]
+                switch location {
+                case .favorites: result = activeCommands.filter(\.isFavorite)
+                case .tag(let id): result = commandsByTag[id] ?? []
+                case .trash: result = []
+                default: result = activeCommands
                 }
                 if !q.isEmpty { result = result.filter {
                     ($0.name ?? "").localizedStandardContains(q) || ($0.content ?? "").localizedStandardContains(q) ||
@@ -194,20 +211,21 @@ final class CabinetViewModel: ObservableObject {
 
     @discardableResult
     func navigate(_ target: CabinetLocation) -> Bool {
+        guard target != location else { return true }
         guard allowLeaving() else { return false }
         contexts[location] = (query, selection)
         draft = nil; originalDraft = nil
         location = target
         query = contexts[target]?.0 ?? ""
         selection = contexts[target]?.1
-        reload()
+        refreshItems()
         selectionScrollRequest += 1
         return true
     }
     func search(_ text: String) {
         guard text != query else { return }
         guard !dirty || allowLeaving() else { return }
-        draft = nil; originalDraft = nil; query = text; reload()
+        draft = nil; originalDraft = nil; query = text; refreshItems()
     }
     @discardableResult
     func select(_ id: NSManagedObjectID) -> Bool {
@@ -300,7 +318,7 @@ final class CabinetViewModel: ObservableObject {
     func setSort(_ value: String) {
         sort = value
         UserDefaults.standard.set(value, forKey: "cabinetSort")
-        reload()
+        refreshItems()
     }
     func move(_ item: CabinetItem, offset: Int) {
         guard allowLeaving(), case .snippet = item, let index = items.firstIndex(where: { $0.id == item.id }) else { return }
