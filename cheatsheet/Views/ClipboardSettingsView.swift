@@ -85,6 +85,7 @@ struct ClipboardSettingsView: View {
                 
                 // 手动清理
                 CabinetSettingsSection {
+                    HStack(spacing: 10) {
                     Button(role: .destructive) {
                         showClearOldAlert = true
                     } label: {
@@ -104,6 +105,7 @@ struct ClipboardSettingsView: View {
                         }
                     }
                     .disabled(totalCount == 0 || isClearing)
+                    }
                 } header: {
                     Text("手动清理")
                 }

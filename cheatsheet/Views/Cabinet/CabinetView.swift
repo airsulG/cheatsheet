@@ -158,7 +158,7 @@ struct CabinetView: View {
                     Text("最近删除")
                     Spacer(minLength: 0)
                 }.font(.system(size: 11)).foregroundStyle(.secondary)
-                    .padding(.horizontal, SidebarGrid.inset).frame(height: 38).contentShape(Rectangle())
+                    .padding(.horizontal, SidebarGrid.inset).frame(height: CabinetGrid.footerHeight).contentShape(Rectangle())
             }.buttonStyle(.plain)
         }.padding(.horizontal, 9)
     }
@@ -235,7 +235,7 @@ struct CabinetView: View {
                     } label: { Image(systemName: "arrow.up.arrow.down").font(.system(size: 11)) }
                         .menuStyle(.borderlessButton).fixedSize().help(model.sort)
                 }
-            }.padding(.horizontal, 20).frame(height: 52)
+            }.padding(.horizontal, CabinetGrid.detailInset).frame(height: CabinetGrid.headerHeight)
             Divider()
             if model.location == .trash { trashList }
             else if model.items.isEmpty {
@@ -248,11 +248,11 @@ struct CabinetView: View {
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(spacing: 9) {
+                        LazyVStack(spacing: 8) {
                             ForEach(model.items) { item in
                                 resultRow(item).id(item.id)
                             }
-                        }.padding(9)
+                        }.padding(8)
                     }
                     .onChange(of: model.selectionScrollRequest) { _, _ in
                         if let id = model.selection { proxy.scrollTo(id) }
@@ -263,7 +263,8 @@ struct CabinetView: View {
             HStack {
                 Text("↑ ↓  选择   ·   ↵  复制并收起")
                 Spacer()
-            }.font(.system(size: 10)).foregroundStyle(.secondary).padding(12)
+            }.font(.system(size: 10)).foregroundStyle(.secondary)
+                .padding(.horizontal, CabinetGrid.detailInset).frame(height: CabinetGrid.footerHeight)
         }.background(palette.list)
     }
 
@@ -290,7 +291,7 @@ struct CabinetView: View {
                 if case .history(let record) = item {
                     CabinetClipboardSource(record: record)
                 }
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(14)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
                 .contentShape(Rectangle())
         }.buttonStyle(.plain).help("单击片段直接编辑，双击复制")
             .accessibilityLabel("片段：\(preview.title)")
@@ -335,7 +336,7 @@ struct CabinetView: View {
                         Button("恢复") { model.perform { try model.store.restore(object) } }.controlSize(.small)
                     }
                 }
-            }.padding(20)
+            }.padding(CabinetGrid.detailInset)
         }
     }
 
@@ -391,7 +392,7 @@ struct CabinetView: View {
                 Spacer()
                 Button("复制") { model.copy(close: false) }
                 Button("复制并收起") { model.copy(close: true) }.buttonStyle(.borderedProminent)
-            }.controlSize(.large).padding(.horizontal, CabinetGrid.detailInset).padding(.vertical, 18)
+            }.controlSize(.large).padding(.horizontal, CabinetGrid.detailInset).frame(height: CabinetGrid.footerHeight)
         }
     }
 

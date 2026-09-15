@@ -53,7 +53,7 @@ struct ImportPanelView: View {
 
                         Spacer(minLength: 20)
                     }
-                    .padding(.horizontal, 32)
+                    .padding(.horizontal, CabinetGrid.detailInset)
                     .padding(.top, 24)
                 }
 
@@ -92,7 +92,7 @@ struct ImportPanelView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 32)
+        .padding(.horizontal, CabinetGrid.detailInset)
         .padding(.vertical, 20)
         .background(
             Rectangle()
@@ -113,6 +113,7 @@ struct ImportPanelView: View {
                 Image(systemName: "info.circle.fill")
                     .foregroundColor(.blue)
                     .font(.title3)
+                    .frame(width: 20)
                 
                 Text("导入格式说明")
                     .font(.headline)
@@ -141,13 +142,14 @@ struct ImportPanelView: View {
                     .font(.system(.caption, design: .monospaced))
                     .foregroundColor(.secondary)
                     .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: 8)
                             .fill(Color(NSColor.controlBackgroundColor))
                     )
             }
         }
-        .padding(20)
+        .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(.regularMaterial)
@@ -161,6 +163,7 @@ struct ImportPanelView: View {
                 Image(systemName: "doc.text.fill")
                     .foregroundColor(.green)
                     .font(.title3)
+                    .frame(width: 20)
                 
                 Text("JSON 数据")
                     .font(.headline)
@@ -192,7 +195,7 @@ struct ImportPanelView: View {
                     importResult = nil
                 }
         }
-        .padding(20)
+        .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(.regularMaterial)
@@ -206,6 +209,7 @@ struct ImportPanelView: View {
                 Image(systemName: result.isSuccess ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                     .foregroundColor(result.isSuccess ? .green : .red)
                     .font(.title3)
+                    .frame(width: 20)
                 
                 Text(result.isSuccess ? "导入成功" : "导入失败")
                     .font(.headline)
@@ -218,7 +222,7 @@ struct ImportPanelView: View {
                 .font(.body)
                 .foregroundColor(.secondary)
         }
-        .padding(20)
+        .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(.regularMaterial)
@@ -242,7 +246,7 @@ struct ImportPanelView: View {
             .disabled(!isFormValid || isImporting)
             .keyboardShortcut(.return, modifiers: .command)
         }
-        .padding(.horizontal, 32)
+        .padding(.horizontal, CabinetGrid.detailInset)
         .padding(.vertical, 20)
         .background(
             Rectangle()

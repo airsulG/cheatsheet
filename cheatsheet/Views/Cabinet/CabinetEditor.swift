@@ -5,6 +5,7 @@ import SwiftUI
 enum CabinetGrid {
     static let detailInset: CGFloat = 24
     static let headerHeight: CGFloat = 52
+    static let footerHeight: CGFloat = 64
 }
 
 struct CabinetPalette {
@@ -122,6 +123,7 @@ struct CabinetEditor: View {
                     .lineLimit(1)
             }.font(.system(size: 11)).foregroundStyle(.secondary).padding(.horizontal, CabinetGrid.detailInset).frame(height: CabinetGrid.headerHeight)
             Divider()
+            GeometryReader { geometry in
             VStack(alignment: .leading, spacing: 17) {
                 HStack(alignment: .top) {
                     CabinetTagFlow(spacing: 6) {
@@ -157,7 +159,8 @@ struct CabinetEditor: View {
                         .focused($titleFocused)
                 }
                 if let data = model.draft?.image, let image = NSImage(data: data) {
-                    Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: 170)
+                    Image(nsImage: image).resizable().scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: min(170, max(60, geometry.size.height * 0.25)))
                 }
                 CabinetTextEditor(text: draft.body, session: model.editorSession, focusRequest: model.editorFocusRequest,
                                   query: model.query, onBlur: { model.autosave(session: $0) })
@@ -174,13 +177,14 @@ struct CabinetEditor: View {
                     Text("离开输入框自动保存")
                 }.font(.system(size: 10)).foregroundStyle(.tertiary)
             }.padding(CabinetGrid.detailInset).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
             Divider()
             HStack(spacing: 10) {
                 Text(model.feedback).font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
                 Button("复制") { model.copy(close: false) }
                 Button("复制并收起") { model.copy(close: true) }.buttonStyle(.borderedProminent)
-            }.controlSize(.large).padding(.horizontal, CabinetGrid.detailInset).padding(.vertical, 18)
+            }.controlSize(.large).padding(.horizontal, CabinetGrid.detailInset).frame(height: CabinetGrid.footerHeight)
         }.onAppear { showTitle = !(model.draft?.title.isEmpty ?? true) }
             .onChange(of: model.editorSession) { _, _ in showTitle = !(model.draft?.title.isEmpty ?? true) }
             .onChange(of: titleFocused) { _, focused in if !focused { model.autosave() } }
@@ -277,6 +281,10 @@ struct CabinetTextEditor: NSViewRepresentable {
         }
         let changedText = context.coordinator.text != text
         if view.string != text && !view.hasMarkedText() { view.string = text }
+        if changedText, !view.hasMarkedText(), let paragraph = view.defaultParagraphStyle {
+            view.textStorage?.addAttribute(.paragraphStyle, value: paragraph,
+                                          range: NSRange(location: 0, length: (view.string as NSString).length))
+        }
         if let editable = view as? CabinetEditableTextView {
             editable.onBlur = { [weak coordinator = context.coordinator, weak view] in
                 guard let coordinator, let view, !view.hasMarkedText() else { return }
@@ -294,11 +302,16 @@ struct CabinetTextEditor: NSViewRepresentable {
             for match in matches {
                 view.layoutManager?.addTemporaryAttribute(.backgroundColor, value: NSColor.controlAccentColor.withAlphaComponent(0.2), forCharacterRange: match)
             }
+            if changedQuery && query.isEmpty {
+                view.setSelectedRange(NSRange(location: 0, length: 0))
+                view.scrollRangeToVisible(NSRange(location: 0, length: 0))
+            }
             if (changedSession || changedQuery), let match = matches.first {
                 let expected = session
                 DispatchQueue.main.async { [weak coordinator = context.coordinator, weak view] in
                     guard coordinator?.session == expected, coordinator?.query == query, let view,
                           NSMaxRange(match) <= (view.string as NSString).length else { return }
+                    view.setSelectedRange(NSRange(location: match.location, length: 0))
                     view.scrollRangeToVisible(match)
                 }
             }
