@@ -1,0 +1,42 @@
+/tmp/cheatsheet-issue11-final-organization.log
+CoreData: annotation: Core Data multi-threading assertions enabled.
+PASS: native sidebar drag, min/max, adaptive clamp, no-op click, end-only persistence, resize restoration and accessibility step
+PASS: per-tag pins, three stable sorts, search, global/favorite isolation, ten toggles, rename, trash/restore, unlink/re-add and v3/v2 backup identity remapping
+PASS: pin/unpin and tag-removal save failures restore only affected fields; persisted pin survives retry
+PASS: real v2 SQLite upgrades without losing IDs, tags, image, favorite or timestamps; pin survives disk close/reopen
+Isolated migration evidence: /var/folders/t6/vt9fqpjj0vd7zfc9gw42yvlw0000gp/T/cabinet-v3-54CB303B-3284-445A-B36A-9B941F17262F
+
+/tmp/cheatsheet-issue11-regression.log
+CoreData: annotation: Core Data multi-threading assertions enabled.
+CoreData: debug: PostSaveMaintenance: incremental_vacuum with freelist_count - 5 and pages_to_free 1
+CoreData: debug: PostSaveMaintenance: incremental_vacuum with freelist_count - 5 and pages_to_free 1
+PASS: v1 SQLite migration preserves IDs, full body, title, order, favorite and pin; adds tag relation
+PASS: multi-tag, optional title, no-tag save, non-destructive deletion, rename and group restore conflicts
+PASS: history source dedup and original protection; v2 JSON roundtrip covers groups, images, no tags and origin; imports v1
+PASS: original file URL, URL, RTF and HTML payloads survive copying
+PASS: full-body tail search, exact copy on isolated pasteboard, clipboard query and selection restoration
+PASS: background clipboard save merges on main and becomes searchable without reopening
+PASS: continuous reader preserves cross-line Unicode copy, tail-match highlight and visibility, reading position, wrapping and item reset
+PASS: mouse selection does not scroll; keyboard selection requests visibility; IME composition waits for Chinese commit
+PASS: clipboard source icon uses saved data, falls back to installed app, and tolerates missing apps
+PASS: direct editing, Unicode autosave, filtered selection retention, no-op blur, save failure recovery, stale-session isolation and blank/history protection
+PASS: cached navigation preserves selection/query without catalog refresh; edit, retag, trash, restore and background insert refresh results and counts
+PASS: grid default, immediate drawer open, repeat-click toggle with save/failure protection, other-card switch, navigation/search dismissal, double-click source routing, pointer/time boundaries and blank-new dismissal
+PASS: save toast, no-op/blank suppression, panel-close persistence, latest-copy precedence, failure clearing and timed dismissal
+PASS: sound defaults, rate limiting, save-copy coalescing, mute/zero volume, pending cancellation, persisted preferences and success-only model routing
+PASS: local sound assets decode and prepare before interaction
+PASS: ten native host transitions reversed after 25ms, drafts saved, final editor unique; visual frame pacing not inferred
+PASS: favorite failure restores state and timestamp; ten rapid toggles persist the final state
+PASS: simulated disk save failure preserves draft, restores the record and supports retry
+PASS: native editor excludes marked IME text, commits Chinese and saves through its real blur callback
+PASS: disk store closes and reopens with image and multi-tag assets intact
+Isolated evidence store: /var/folders/t6/vt9fqpjj0vd7zfc9gw42yvlw0000gp/T/cabinet-check-3D641420-0DF3-42FF-91E5-765278883B88
+
+/tmp/cheatsheet-issue11-core.log
+CoreData: annotation: Core Data multi-threading assertions enabled.
+PASS: swap, invalid indices, title order, numeric order and persisted readback
+PASS: title, full body tail, case, trim, no match, empty query and child observation
+PASS: backup/archive import round-trip in isolated memory stores
+PASS: borderless panel key status and field editor text input
+PASS: JSON import contract, command creation and full-content readback
+

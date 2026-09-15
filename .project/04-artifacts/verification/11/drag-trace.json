@@ -1,0 +1,46 @@
+[
+  {
+    "event": "drag-return",
+    "ms": 582
+  },
+  {
+    "event": "screenshot",
+    "file": "drag-0.jpg",
+    "ms": 1064
+  },
+  {
+    "event": "screenshot",
+    "file": "drag-1.jpg",
+    "ms": 1145
+  },
+  {
+    "event": "screenshot",
+    "file": "drag-2.jpg",
+    "ms": 1217
+  },
+  {
+    "event": "screenshot",
+    "file": "drag-3.jpg",
+    "ms": 1291
+  },
+  {
+    "event": "screenshot",
+    "file": "drag-4.jpg",
+    "ms": 1354
+  },
+  {
+    "event": "screenshot",
+    "file": "drag-5.jpg",
+    "ms": 1420
+  },
+  {
+    "event": "screenshot",
+    "file": "drag-6.jpg",
+    "ms": 1496
+  },
+  {
+    "event": "screenshot",
+    "file": "drag-7.jpg",
+    "ms": 1559
+  }
+]
