@@ -57,3 +57,15 @@ CabinetCardInteraction 保存首击对象 ID、窗口坐标、时间及导航上
 后续密度与收起修订（b672393）将卡片改为 200pt、14pt 内边距、最多六行文字及 64pt 图片预览。CabinetViewModel.toggleDetail 区分当前卡片和其他卡片，前者保存后收起，后者打开/切换。ScrollView 的网格内容至少覆盖可见高度，其背景命中区域接收卡片间和底部空白点击；卡片 Button 优先处理自身点击，不用父层手势抢走卡片操作。收起统一复用 closeDetail 的保存失败保护。双击继续由窗口鼠标事件处理，当前卡片首击关闭后仍能复制。
 
 保存提示与边线修订（5058dca）：面板 overlay 内的 Divider 没有竖向布局约束，会在中间画横线，替换为 leading 对齐、宽 1pt 的 Rectangle。toastMessage 和一个可取消任务统一管理保存/复制成功提示，最新操作替换旧提示并重新计时，两秒后清空。save 真实落盘成功后发布“已保存”，copy 成功后发布“已复制到剪贴板”；无变化和空白草稿直接返回，不重启计时；失败清除旧成功提示并保留原有错误与草稿保护。提示位于 CabinetView 根部，不依赖编辑面板是否仍存在。
+
+## 微动效与成功音效
+
+2026-09-15，4e3c3a7 / df94eca 延续原有交互。CabinetMotion 集中曲线，CabinetCardStyle 只在视觉层响应悬停和按下；外层 contentShape 保持点击区域。标签的 animation 仅放在选中背景，面板沿用原 transition，不增加等待或逐项入场。CabinetToast 常驻根部，透明退出时保留上一条文字；非空提示替换不重新触发入场，显示时长仍由 ViewModel 的原有可取消任务管理。系统 Reduce Motion 分别控制卡片缩放、提示位移/勾选缩放、星标缩放和面板方向过渡，不控制声音。
+
+CabinetViewModel.toggleFavorite 先完成现有草稿保存，再保存星标状态；失败恢复该对象原有星标及 updatedAt，不回滚整个 context。CabinetFavoriteButton 的局部动画不向网格传播，快速操作最终服从持久化状态。
+
+CabinetSoundPlayer 是主线程单例，App 初始化时将两段 PCM WAV 读入内存并 prepareToPlay。播放路径不读取资源文件；中断使用 pause 保留准备状态，自然结束的 AVAudioPlayerDelegate 回调重新准备下一次。音频采用项目原创程序合成，不需要联网或第三方素材。没有循环播放或常驻轮询；唯一延迟任务是启用保存音后的 80ms 合并窗口，复制立即取消它。复制限频 120ms；保存与最近声音相隔不足 300ms 时静音。这些判断均在成功操作之后，只减少声音，不丢弃保存或复制。
+
+WindowController 将 ViewModel 的 successFeedback / cancelPendingFeedback 接到播放器；模型测试默认不发声。保存与复制失败取消待播保存音；总开关关闭或音量为零停止当前声音，关闭保存音取消待播保存音。设置通过 AppStorage 与播放器共用偏好键；默认总开关开、保存音关、音量 0.35，试听仍服从总开关和音量。播放器不可用时显示“音效暂不可用”，文字提示独立工作。
+
+Apple 的 [pause](https://developer.apple.com/documentation/avfaudio/avaudioplayer/pause()) 与 [prepareToPlay](https://developer.apple.com/documentation/avfaudio/avaudioplayer/preparetoplay()) 描述准备和暂停语义；实际构建使用本机 SDK 中的 AVAudioPlayerDelegate 主线程约束。真实播放器调用、行为测试与尚未通过的体验验证分别记录在 [微动效与音效验收](../04-artifacts/verification/9/motion-sound.md)，不把 prepareToPlay 或 play 返回成功解释为主观听感合格。
