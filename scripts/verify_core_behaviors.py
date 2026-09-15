@@ -22,8 +22,9 @@ def main():
     if not files or not model.exists():
         sys.exit("未找到本机架构的 Debug 构建，请先按 README 的命令构建。")
     cabinet = len(sys.argv) == 3 and sys.argv[2] == "--cabinet"
-    output = derived / ("cabinet-checks" if cabinet else "core-behavior-checks")
-    source = pathlib.Path(__file__).with_name("CabinetChecks.swift" if cabinet else "CoreBehaviorChecks.swift")
+    organization = len(sys.argv) == 3 and sys.argv[2] == "--organization"
+    output = derived / ("cabinet-organization-checks" if organization else "cabinet-checks" if cabinet else "core-behavior-checks")
+    source = pathlib.Path(__file__).with_name("CabinetOrganizationChecks.swift" if organization else "CabinetChecks.swift" if cabinet else "CoreBehaviorChecks.swift")
     result = subprocess.run([
         "xcrun", "swiftc", "-parse-as-library", "-I", str(products),
         str(source), *files, "-o", str(output),

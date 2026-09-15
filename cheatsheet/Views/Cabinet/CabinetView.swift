@@ -24,9 +24,9 @@ struct CabinetView: View {
         VStack(spacing: 0) {
             toolbar
             Divider()
-            HStack(spacing: 0) {
-                sidebar.frame(width: 188)
-                Divider()
+            CabinetSplitView {
+                sidebar
+            } content: {
                 GeometryReader { geometry in
                     ZStack(alignment: .trailing) {
                         results
