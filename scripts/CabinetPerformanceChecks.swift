@@ -88,7 +88,7 @@ private struct PreviousReader: View {
                 let current = autoreleasepool { measure {
                     let view = CabinetReaderDocument()
                     view.update(text: sample.text, query: "", dark: true, header: AnyView(EmptyView()))
-                    view.arrange(width: 536)
+                    view.arrange(width: 480 + CabinetGrid.detailInset * 2)
                     precondition(view.textView.string == sample.text && view.textView.frame.height > 0)
                 } }
                 let editing = autoreleasepool { measure {

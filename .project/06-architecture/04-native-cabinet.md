@@ -39,3 +39,11 @@
 CabinetViewModel.reload 在初始化、数据变更和窗口重新显示时重建片段与标签归属，并一次性发布统计。普通导航、搜索和排序调用 refreshItems；标签通过缓存的对象 ID 索引找到片段，不重复查询和统计全库。缓存仍属于主线程 context，未跨队列传递托管对象。剪贴板数据更新仍通过自动合并后的通知刷新；数据刷新同时清除最多 256 项的卡片短文本缓存。标题提取遇到首条非空行就返回，不再预处理全文。
 
 `scripts/verify_core_behaviors.py --cabinet` 验证内容原样复制、末尾搜索定位、宽度变化、选区保留、标签与数据缓存更新，以及旧数据兼容。`scripts/verify_cabinet_performance.py` 比较相同正文的修复前逐行结构与当前原生阅读区，默认使用模拟数据，也可显式指定只读 SQLite 副本；只输出数量、长度和耗时。分项布局耗时不等于点击到屏幕更新的延迟，实际窗口行为需要另外验证。
+
+## 直接编辑与失焦保存
+
+2026-09-15 的补充需求在同一 Issue #9 / PR #10 交付。片段默认使用 CabinetEditor 中的连续 NSTextView，CabinetReader 继续承担剪贴板只读原文。选中后同步草稿；后台刷新不会覆盖脏草稿。editorSession 绑定一轮编辑，SwiftUI Binding 和失焦保存都核对 session，阻止已离开的控件写入新草稿。editorFocusRequest 只在单击片段、新建或明确编辑时请求焦点，搜索更新不抢焦点。
+
+CabinetEditableTextView.resignFirstResponder 和 textDidEndEditing 提交已上屏文字；hasMarkedText 时不把拼音组合写入草稿。标题焦点、标签选择结束、图片修改以及窗口失焦接入同一个 autosave。导航、关闭、复制和移到最近删除先调用 allowLeaving，自动保存失败则停留。save 保留草稿并更新 originalDraft，既保留撤销栈也避免无变化重复写；查询不被清空，pinnedDraftID 暂时保留刚保存但不再匹配筛选的编辑对象，到下一次导航/搜索/选择时解除。CabinetStore.save 失败只恢复本次修改的字段，避免其他操作误存失败内容，不调用整个 context.rollback。
+
+CabinetGrid 统一 24pt 内容边距、52pt 标题区和 64pt 底部操作区。NSTextView 的 lineFragmentPadding 为 0，程序加载的正文也应用 7pt 行距；搜索使用临时高亮属性，不把样式写入片段。切换编辑会话重置撤销和选区；查询匹配定位后将插入点放在匹配开头，清空查询回到顶部。详见 [行为与页面验收](../04-artifacts/verification/9/auto-edit.md)。
