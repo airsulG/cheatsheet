@@ -1,5 +1,13 @@
 # 原生资料柜
 
+## 当前补充：侧栏宽度与标签内置顶（Issue #11）
+
+CabinetSplitView 单独持有侧栏宽度和拖动状态，AppKit 分隔控件直接处理 mouseDown / mouseDragged / mouseUp，不使用拖动循环、延迟或布局动画。8pt 命中区覆盖现有边界，不占额外布局宽度；保留正文焦点。默认 188pt，范围 160pt 至 min(320pt, 窗口宽度 × 30%)，AppStorage 仅在松手或辅助功能增减操作后写偏好。窗口临时缩小不修改偏好；无变化的点击也不修改。拖动闭包不调用 ViewModel、Core Data 查询或保存。卡片仍为 200pt 高、12pt 间距。
+
+当前 Core Data 版本为 cheatsheetV3，保留 v1/v2，新增 Command.pinnedTags 与 Category.pinnedCommands 的可选多对多反向关系，删除规则 Nullify。它与 Category.isPinned、Command.isFavorite 分开。CabinetPins 负责成员资格检查、持久化与失败恢复，不修改片段时间和全局手动顺序。当前标签筛选后分成置顶和普通两部分，各自沿用原排序，最后用对象 ID 打破同值；其他位置不采用置顶。手动上移/下移不越过两个部分的边界。
+
+CabinetStore.save 移除活动标签关联时同步清除对应置顶；软删除标签暂时不在选择器中显示，编辑正文仍保留隐藏关系，供恢复使用。保存失败仅恢复本次涉及的字段。备份格式 v3 使用可选 pinnedTagIDs，导入时按新建标签映射并与实际成员关系取交集；旧 v1/v2 缺少该字段即未置顶。真实旧 SQLite 升级、磁盘重开、备份映射和失败注入见 [验证记录](../04-artifacts/verification/11/README.md)。下文保留以前各轮实现及当时版本，当前模型版本以上述 v3 为准。
+
 关联 [Issue #7](https://github.com/airsulG/cheatsheet/issues/7)。基线 main 0e4cfff，实施分支 codex/native-cabinet。主界面使用 SwiftUI，AppKit 管理窗口、磨砂、焦点及文本输入；继续复用剪贴板监控、快捷键、导入与设置。
 
 ## 数据兼容的决定

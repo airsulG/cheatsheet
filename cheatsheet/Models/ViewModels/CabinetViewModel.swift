@@ -192,12 +192,26 @@ final class CabinetViewModel: ObservableObject {
                 } }
                 if let id = pinnedDraftID, let pinned = activeCommands.first(where: { $0.objectID == id }),
                    !result.contains(where: { $0.objectID == id }) { result.append(pinned) }
+                let pinnedTag: Category? = {
+                    if case .tag(let id) = location { return tags.first { $0.objectID == id } }
+                    return nil
+                }()
                 result.sort {
-                    switch sort {
-                    case "标题": return $0.displayTitle.localizedStandardCompare($1.displayTitle) == .orderedAscending
-                    case "手动顺序": return $0.order == $1.order ? $0.displayTitle < $1.displayTitle : $0.order < $1.order
-                    default: return ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast)
+                    if let pinnedTag {
+                        let left = $0.isPinned(in: pinnedTag), right = $1.isPinned(in: pinnedTag)
+                        if left != right { return left }
                     }
+                    switch sort {
+                    case "标题":
+                        let order = $0.displayTitle.localizedStandardCompare($1.displayTitle)
+                        if order != .orderedSame { return order == .orderedAscending }
+                    case "手动顺序":
+                        if $0.order != $1.order { return $0.order < $1.order }
+                        if $0.displayTitle != $1.displayTitle { return $0.displayTitle < $1.displayTitle }
+                    default:
+                        if $0.updatedAt != $1.updatedAt { return ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
+                    }
+                    return $0.objectID.uriRepresentation().absoluteString < $1.objectID.uriRepresentation().absoluteString
                 }
                 items = result.map(CabinetItem.snippet)
             }
@@ -403,6 +417,8 @@ final class CabinetViewModel: ObservableObject {
         guard allowLeaving(), case .snippet = item, let index = items.firstIndex(where: { $0.id == item.id }) else { return }
         let target = index + offset
         guard items.indices.contains(target) else { return }
+        if case .snippet(let source) = item, case .snippet(let destination) = items[target],
+           isPinnedInCurrentTag(source) != isPinnedInCurrentTag(destination) { return }
         var reordered = items
         reordered.swapAt(index, target)
         perform {

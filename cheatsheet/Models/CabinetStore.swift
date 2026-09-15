@@ -22,11 +22,15 @@ final class CabinetStore {
             throw CabinetError.invalid("请输入正文或添加图片")
         }
         let item = command ?? Command(context: context, name: "", content: "")
-        let keys = ["name", "content", "tags", "tagsMigrated", "category", "imageData", "originID", "updatedAt"]
+        let keys = ["name", "content", "tags", "pinnedTags", "tagsMigrated", "category", "imageData", "originID", "updatedAt"]
         let previous = item.dictionaryWithValues(forKeys: keys)
         item.name = title.trimmingCharacters(in: .whitespacesAndNewlines)
         item.content = body
-        item.tags = NSSet(set: tags.filter { $0.deletedAt == nil })
+        // 标签选择器不显示已软删除标签；编辑正文时保留这些关系，供恢复使用。
+        let hiddenTags = (item.tags as? Set<Category> ?? []).filter { $0.deletedAt != nil }
+        let retainedTags = Set(tags.filter { $0.deletedAt == nil }).union(hiddenTags)
+        item.tags = NSSet(set: retainedTags)
+        item.pinnedTags = NSSet(set: (item.pinnedTags as? Set<Category> ?? []).intersection(retainedTags))
         item.tagsMigrated = true
         item.category = nil
         item.imageData = image

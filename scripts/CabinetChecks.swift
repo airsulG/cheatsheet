@@ -94,7 +94,7 @@ struct CabinetChecks {
         _ = try BackupService(context: restored.viewContext).importArchive(v1)
         let legacyImported = try restored.viewContext.fetch(Command.fetchRequest())
         precondition(legacyImported.contains { $0.content == "旧备份正文" && $0.activeTags.count == 1 })
-        print("PASS: history source dedup and original protection; v2 JSON roundtrip covers groups, images, no tags and origin; imports v1")
+        print("PASS: history source dedup and original protection; current JSON roundtrip covers groups, images, no tags and origin; imports v1")
         let named = NSPasteboard(name: .init("cabinet-check-\(UUID())"))
         let vm = CabinetViewModel(context: context, pasteboard: named)
         precondition(CabinetContent.title(" \r\n\t\u{2028}  第一行 👩🏽‍💻  \n后续正文") == "第一行 👩🏽‍💻")

@@ -9,7 +9,7 @@ import Foundation
 import CoreData
 
 struct BackupArchive: Codable {
-    static let currentVersion = 2
+    static let currentVersion = 3
 
     let version: Int
     let exportedAt: Date
@@ -61,6 +61,7 @@ struct BackupCommand: Codable, Identifiable {
     let createdAt: Date
     let updatedAt: Date
     var tagIDs: [UUID]? = nil
+    var pinnedTagIDs: [UUID]? = nil
     var imageData: Data? = nil
     var originID: UUID? = nil
     var deletedAt: Date? = nil
